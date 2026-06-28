@@ -1,82 +1,132 @@
 package dev.sweep.assistant.settings
 
-import com.intellij.icons.AllIcons
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.ToolWindowManager
-import com.intellij.ui.JBColor
-import com.intellij.util.ui.JBUI
+import com.intellij.ui.components.JBCheckBox
+import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTextArea
+import com.intellij.util.ui.FormBuilder
 import dev.sweep.assistant.components.SweepConfig
-import dev.sweep.assistant.utils.SweepConstants
-import dev.sweep.assistant.utils.colorizeIcon
-import java.awt.BorderLayout
-import java.awt.Component
+import dev.sweep.assistant.services.LocalAutocompleteServerManager
 import java.awt.Dimension
-import java.awt.Font
-import java.awt.event.WindowEvent
-import javax.swing.*
+import javax.swing.JComponent
+import javax.swing.JPanel
+import javax.swing.JSpinner
+import javax.swing.SpinnerNumberModel
 
 class SweepSettingsConfigurable(
     private val project: Project,
 ) : Configurable {
-    private var githubTokenField: JPasswordField? = null
-    private var baseUrlField: JTextField? = null
-    private var anthropicApiKeyField: JPasswordField? = null
     private val settings = SweepSettings.getInstance()
-    private var betaFlagField: JCheckBox? = null
+    private val config
+        get() = SweepConfig.getInstance(project)
+
+    private val enabledField = JBCheckBox("Enable autocomplete")
+    private val localModeField = JBCheckBox("Use local autocomplete server")
+    private val acceptWordField = JBCheckBox("Accept the next word with Right Arrow")
+    private val showBadgeField = JBCheckBox("Show the Tab-to-accept badge")
+    private val disableConflictsField = JBCheckBox("Disable conflicting autocomplete plugins automatically")
+    private val debounceField = JSpinner(SpinnerNumberModel(100, 10, 1000, 10))
+    private val portField = JSpinner(SpinnerNumberModel(8081, 1, 65535, 1))
+    private val exclusionsField =
+        JBTextArea().apply {
+            lineWrap = false
+            rows = 7
+            emptyText.text = "One file name or path pattern per line"
+        }
+
+    private var component: JPanel? = null
 
     override fun createComponent(): JComponent {
-        val panel = JPanel(BorderLayout())
-        panel.border = JBUI.Borders.empty(20)
+        if (component == null) {
+            val exclusionsScroll =
+                JBScrollPane(exclusionsField).apply {
+                    preferredSize = Dimension(520, 140)
+                }
 
-        val centerPanel = JPanel()
-        centerPanel.layout = BoxLayout(centerPanel, BoxLayout.Y_AXIS)
-        centerPanel.border = JBUI.Borders.empty(20)
-
-        val messageLabel =
-            JLabel("You can configure Sweep below. The settings are also located in the Sweep Sidebar (${SweepConstants.META_KEY}J). ")
-        messageLabel.font = messageLabel.font.deriveFont(Font.BOLD, 16f)
-        messageLabel.alignmentX = Component.CENTER_ALIGNMENT
-        centerPanel.add(messageLabel)
-
-        centerPanel.add(Box.createRigidArea(Dimension(0, 10)))
-
-        val openConfigButton =
-            JButton("Configure Settings").apply {
-                icon = colorizeIcon(AllIcons.General.Settings, JBColor(0x5C8CF9, 0x7AA2F7))
-                alignmentX = Component.CENTER_ALIGNMENT
-                font = font.deriveFont(font.size * 1.2f)
-                preferredSize =
-                    Dimension(
-                        (preferredSize.width * 2).coerceAtLeast(200),
-                        (preferredSize.height * 2).coerceAtLeast(60),
-                    )
-            }
-        openConfigButton.addActionListener {
-            SwingUtilities.getWindowAncestor(openConfigButton)?.dispatchEvent(
-                WindowEvent(SwingUtilities.getWindowAncestor(openConfigButton), WindowEvent.WINDOW_CLOSING),
-            )
-            // open tool window and show config popup
-            ToolWindowManager.getInstance(project).getToolWindow(SweepConstants.TOOLWINDOW_NAME)?.show()
-            SweepConfig.getInstance(project).showConfigPopup()
+            component =
+                FormBuilder
+                    .createFormBuilder()
+                    .addComponent(JBLabel("Autocomplete"))
+                    .addComponent(enabledField)
+                    .addComponent(acceptWordField)
+                    .addComponent(showBadgeField)
+                    .addComponent(disableConflictsField)
+                    .addLabeledComponent("Debounce (ms):", debounceField)
+                    .addSeparator()
+                    .addComponent(JBLabel("Local server"))
+                    .addComponent(localModeField)
+                    .addLabeledComponent("Port:", portField)
+                    .addSeparator()
+                    .addLabeledComponent("Excluded files and paths:", exclusionsScroll)
+                    .addComponentFillVertically(JPanel(), 0)
+                    .panel
         }
-        centerPanel.add(openConfigButton)
-
-        panel.add(centerPanel, BorderLayout.CENTER)
-        return panel
+        reset()
+        return component!!
     }
 
-    override fun isModified(): Boolean = false
+    override fun isModified(): Boolean =
+        enabledField.isSelected != settings.nextEditPredictionFlagOn ||
+            localModeField.isSelected != settings.autocompleteLocalMode ||
+            acceptWordField.isSelected != settings.acceptWordOnRightArrow ||
+            showBadgeField.isSelected != config.isShowAutocompleteBadge() ||
+            disableConflictsField.isSelected != config.isDisableConflictingPluginsEnabled() ||
+            debounceField.intValue() != config.getDebounceThresholdMs().toInt() ||
+            portField.intValue() != config.getAutocompleteLocalPort() ||
+            exclusionPatterns() != config.getAutocompleteExclusionPatterns()
 
     override fun apply() {
-        return // no op
-    }
+        val wasLocalMode = settings.autocompleteLocalMode
+        val oldPort = settings.autocompleteLocalPort
 
-    override fun getDisplayName(): String = SweepConstants.PLUGIN_NAME
+        settings.nextEditPredictionFlagOn = enabledField.isSelected
+        settings.acceptWordOnRightArrow = acceptWordField.isSelected
+        config.updateShowAutocompleteBadge(showBadgeField.isSelected)
+        config.updateIsDisableConflictingPluginsEnabled(disableConflictsField.isSelected)
+        config.updateDebounceThresholdMs(debounceField.intValue().toLong())
+        config.updateAutocompleteExclusionPatterns(exclusionPatterns())
+        config.updateAutocompleteLocalPort(portField.intValue())
+        config.updateAutocompleteLocalMode(localModeField.isSelected)
+        settings.notifySettingsChanged()
+
+        if (localModeField.isSelected && (!wasLocalMode || oldPort != portField.intValue())) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val manager = LocalAutocompleteServerManager.getInstance()
+                if (wasLocalMode && oldPort != portField.intValue()) {
+                    manager.restartServer()
+                } else {
+                    manager.ensureServerRunning()
+                }
+            }
+        }
+    }
 
     override fun reset() {
-        githubTokenField?.text = settings.githubToken
-        baseUrlField?.text = settings.baseUrl
-        betaFlagField?.isSelected = settings.betaFlagOn
+        enabledField.isSelected = settings.nextEditPredictionFlagOn
+        localModeField.isSelected = settings.autocompleteLocalMode
+        acceptWordField.isSelected = settings.acceptWordOnRightArrow
+        showBadgeField.isSelected = config.isShowAutocompleteBadge()
+        disableConflictsField.isSelected = config.isDisableConflictingPluginsEnabled()
+        debounceField.value = config.getDebounceThresholdMs().toInt()
+        portField.value = config.getAutocompleteLocalPort()
+        exclusionsField.text = config.getAutocompleteExclusionPatterns().sorted().joinToString("\n")
     }
+
+    override fun disposeUIResources() {
+        component = null
+    }
+
+    override fun getDisplayName(): String = "Sweep Autocomplete"
+
+    private fun exclusionPatterns(): Set<String> =
+        exclusionsField.text
+            .lineSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toSet()
+
+    private fun JSpinner.intValue(): Int = (value as Number).toInt()
 }

@@ -43,6 +43,7 @@
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="dev.sweep.assistant.startup.AutocompleteStartupActivity"/>
         <notificationGroup id="Sweep Autocomplete" displayType="BALLOON"/>
+        <notificationGroup id="Sweep Commit Messages" displayType="BALLOON"/>
         <notificationGroup id="Sweep Plugin Conflicts" displayType="BALLOON"/>
         <applicationService serviceImplementation="dev.sweep.assistant.settings.SweepSettings"/>
         <applicationService serviceImplementation="dev.sweep.assistant.settings.SweepMetaData"/>
@@ -78,6 +79,12 @@
                 description="Undo cancellation and force a new autocomplete suggestion">
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift BACK_SPACE"/>
             <keyboard-shortcut keymap="Mac OS X" first-keystroke="alt shift BACK_SPACE"/>
+        </action>
+        <action id="dev.sweep.assistant.actions.SweepCommitMessageAction"
+                class="dev.sweep.assistant.actions.SweepCommitMessageAction"
+                text="Generate New Commit Message"
+                description="Generate a commit message with Sweep">
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="last"/>
         </action>
     </actions>
     <resource-bundle>messages.sweep</resource-bundle>

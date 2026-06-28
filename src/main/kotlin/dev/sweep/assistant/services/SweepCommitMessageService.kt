@@ -1,6 +1,5 @@
 package dev.sweep.assistant.services
 
-import com.intellij.ide.DataManager
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -10,15 +9,9 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FilePath
-import com.intellij.openapi.vcs.VcsDataKeys
 import com.intellij.openapi.vcs.changes.*
 import com.intellij.openapi.vcs.ui.CommitMessage
-import com.intellij.openapi.wm.IdeFocusManager
-import com.intellij.openapi.wm.ToolWindowManager
-import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.serviceContainer.AlreadyDisposedException
-import com.intellij.util.messages.MessageBusConnection
-import com.intellij.vcs.commit.*
 import dev.sweep.assistant.components.SweepConfig
 import dev.sweep.assistant.data.CommitMessageRequest
 import dev.sweep.assistant.utils.PartialChangeInfo
@@ -32,76 +25,13 @@ import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.time.Instant
 import java.util.concurrent.CancellationException
-import java.util.concurrent.Future
 
 @Service(Service.Level.PROJECT)
 class SweepCommitMessageService(
     private val project: Project,
 ) : Disposable {
     private var previousMessage: String? = null
-    private var commitUi: CommitMessageUi? = null
     private var lastUpdateTime: Long = 0
-    private var messageBusConnection: MessageBusConnection? = null
-    private val runningTasks = mutableListOf<Future<*>>()
-
-    init {
-        messageBusConnection = project.messageBus.connect(this) // Connect with disposable
-        messageBusConnection?.subscribe(
-            ToolWindowManagerListener.TOPIC,
-            object : ToolWindowManagerListener {
-                override fun stateChanged(toolWindowManager: ToolWindowManager) {
-                    if (project.isDisposed) return
-
-                    val activeId = toolWindowManager.activeToolWindowId
-                    // if they interact with commit tab
-                    // note that we have a 5 minute cooldown which prevents
-                    // excessive commit message creation, if we change the cool down to be less
-                    // we need to change this to keep track of previous activeid
-                    if (activeId == "Commit" || activeId == "Version Control") {
-                        try {
-                            val focusOwner = IdeFocusManager.getInstance(project).focusOwner
-                            if (focusOwner != null) {
-                                val dataContext = DataManager.getInstance().getDataContext(focusOwner)
-
-                                // this will not work for 2023 but wont error anything
-                                val commitMessage = VcsDataKeys.COMMIT_MESSAGE_CONTROL.getData(dataContext) as? CommitMessage ?: return
-
-                                synchronized(runningTasks) {
-                                    if (!project.isDisposed) {
-                                        val task =
-                                            ApplicationManager.getApplication().executeOnPooledThread {
-                                                try {
-                                                    updateCommitMessage(commitMessage)
-                                                } catch (e: ProcessCanceledException) {
-                                                    // Rethrow ProcessCanceledException as required by IntelliJ
-                                                    throw e
-                                                } catch (e: AlreadyDisposedException) {
-                                                    // Project/service is disposed, this is expected during shutdown
-                                                    logger.debug("Project disposed during commit message generation")
-                                                    throw e
-                                                } catch (_: CancellationException) {
-                                                    // Task was cancelled, which is expected during shutdown
-                                                    logger.debug("Commit message generation cancelled")
-                                                } catch (e: Exception) {
-                                                    logger.warn("Error updating commit message", e)
-                                                }
-                                            }
-                                        runningTasks.add(task)
-                                    }
-                                }
-                            }
-                        } catch (e: ProcessCanceledException) {
-                            // Rethrow ProcessCanceledException as required by IntelliJ
-                            throw e
-                        } catch (e: Exception) {
-                            println("failed to initialize")
-                            logger.error("Error initializing commit message service", e)
-                        }
-                    }
-                }
-            },
-        )
-    }
 
     fun updateCommitMessage(
         commitMessage: CommitMessage,
@@ -127,6 +57,7 @@ class SweepCommitMessageService(
             val apiResponse = generateCommitMessage(selectedChanges, partialChanges, unversionedFiles)
 
             if (project.isDisposed) return // Check again after potentially long operation
+            if (apiResponse.isBlank()) return
 
             ApplicationManager.getApplication().invokeLater {
                 if (project.isDisposed) return@invokeLater
@@ -154,7 +85,13 @@ class SweepCommitMessageService(
             // Task was cancelled, which is expected during shutdown
             logger.debug("Commit message generation cancelled")
         } catch (e: Exception) {
-            logger.warn("Error making API call", e)
+            logger.warn("Error generating commit message", e)
+            showNotification(
+                project = project,
+                title = "Commit message generation failed",
+                body = e.message ?: "Sweep could not generate a commit message.",
+                notificationGroup = "Sweep Commit Messages",
+            )
         }
     }
 
@@ -278,18 +215,6 @@ class SweepCommitMessageService(
     }
 
     override fun dispose() {
-        // Cancel any running tasks
-        synchronized(runningTasks) {
-            runningTasks.forEach { it.cancel(true) }
-            runningTasks.clear()
-        }
-
-        // Disconnect message bus
-        messageBusConnection?.disconnect()
-        messageBusConnection = null
-
-        // Clear references
-        commitUi = null
         previousMessage = null
     }
 }

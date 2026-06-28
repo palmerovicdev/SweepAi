@@ -26,7 +26,6 @@ import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.util.concurrency.AppExecutorUtil
 import dev.sweep.assistant.actions.AddToContextFromProjectAction
 import dev.sweep.assistant.actions.ReviewPRAction
-import dev.sweep.assistant.actions.SweepCommitMessageAction
 import dev.sweep.assistant.actions.SweepProblemsAction
 import dev.sweep.assistant.autocomplete.edit.AcceptEditCompletionAction
 import dev.sweep.assistant.autocomplete.edit.RecentEditsTracker
@@ -108,32 +107,6 @@ class SweepStartupActivity :
                     actionManager.getAction(actionId) as AddToContextFromProjectAction
                 }
             SweepActionManager.getInstance(project).addToContextAction = addToContextAction
-
-            // Register SweepCommitMessageAction (only once per IDE)
-            val commitMessageActionId = "dev.sweep.assistant.actions.SweepCommitMessageAction"
-            val commitMessageAction =
-                if (actionManager.getAction(commitMessageActionId) == null) {
-                    val action = SweepCommitMessageAction()
-                    actionManager.unregisterAction(commitMessageActionId)
-                    actionManager.registerAction(commitMessageActionId, action)
-
-                    // Add to Vcs.MessageActionGroup
-                    actionManager.getAction("Vcs.MessageActionGroup")?.let { group ->
-                        if (group is DefaultActionGroup) {
-                            // Only add if not already present in the group
-                            if (!group.containsAction(action)) {
-                                group.addAction(
-                                    action,
-                                    Constraints(Anchor.LAST, null),
-                                )
-                            }
-                        }
-                    }
-                    action
-                } else {
-                    actionManager.getAction(commitMessageActionId) as SweepCommitMessageAction
-                }
-            SweepActionManager.getInstance(project).commitMessageAction = commitMessageAction
 
             // Register SweepProblemsAction (only once per IDE)
             val problemsActionId = "dev.sweep.assistant.actions.SweepProblemsAction"

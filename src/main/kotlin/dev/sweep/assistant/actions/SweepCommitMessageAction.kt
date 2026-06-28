@@ -2,6 +2,7 @@ package dev.sweep.assistant.actions
 
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -20,6 +21,15 @@ class SweepCommitMessageAction : AnAction() {
             description = "Generates a commit message"
             icon = SweepIcons.Sweep16x16
         }
+    }
+
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+    override fun update(e: AnActionEvent) {
+        val hasCommitContext =
+            e.project != null &&
+                e.getData(VcsDataKeys.COMMIT_MESSAGE_CONTROL) is CommitMessage
+        e.presentation.isEnabledAndVisible = hasCommitContext
     }
 
     override fun actionPerformed(e: AnActionEvent) {

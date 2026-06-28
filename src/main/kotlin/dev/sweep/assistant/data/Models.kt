@@ -551,7 +551,13 @@ data class CommitMessageRequest(
     val previous_commits: String,
     val branch: String,
     val commit_template: String? = null,
+    val privacy_mode_enabled: Boolean = false,
 ) : BaseRequest()
+
+@Serializable
+data class CommitMessageResponse(
+    val commit_message: String,
+)
 
 @Serializable
 enum class ApplyStatusLabel {

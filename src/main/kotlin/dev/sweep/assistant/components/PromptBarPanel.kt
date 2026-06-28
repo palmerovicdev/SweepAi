@@ -1275,7 +1275,7 @@ class PromptBarPanel(
         val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return
         val document = editor.document
         val fileEditorManager = FileEditorManager.getInstance(project)
-        val fileEditors = fileEditorManager.getEditors(editor.virtualFile)
+        val fileEditors = fileEditorManager.getEditors(editor.virtualFile ?: return)
         val globalEditor = fileEditorManager.selectedTextEditor ?: throw Exception("No files opened.")
         val fileEditor = fileEditors.filterIsInstance<TextEditor>().firstOrNull() ?: return
         var requestSuccess = false
@@ -1510,7 +1510,7 @@ class PromptBarPanel(
     private suspend fun startCmdKFullFile(promptText: String) {
         val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return
         val fileEditorManager = FileEditorManager.getInstance(project)
-        val fileEditors = fileEditorManager.getEditors(editor.virtualFile)
+        val fileEditors = fileEditorManager.getEditors(editor.virtualFile ?: return)
         val globalEditor = fileEditorManager.selectedTextEditor ?: throw Exception("No files opened.")
         val fileEditor = fileEditors.filterIsInstance<TextEditor>().firstOrNull() ?: return
         var requestSuccess = false

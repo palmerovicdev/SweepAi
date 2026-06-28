@@ -10,9 +10,11 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import java.awt.event.KeyEvent
 import java.time.Duration
 
+@EnabledIfEnvironmentVariable(named = "SWEEP_E2E", matches = "true")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class HappyPathTest {

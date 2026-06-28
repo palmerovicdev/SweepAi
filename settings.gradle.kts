@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
+
 pluginManagement {
     repositories {
         mavenCentral()
@@ -5,6 +7,21 @@ pluginManagement {
     }
 }
 
-rootProject.name = "jetbrains"
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+    id("org.jetbrains.intellij.platform.settings") version "2.16.0"
+}
 
-include("untitled")
+@Suppress("UnstableApiUsage")
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+
+        intellijPlatform {
+            defaultRepositories()
+        }
+    }
+}
+
+rootProject.name = "jetbrains"

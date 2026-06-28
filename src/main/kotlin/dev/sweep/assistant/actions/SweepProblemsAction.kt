@@ -1,6 +1,7 @@
 package dev.sweep.assistant.actions
 
 import com.intellij.analysis.problemsView.toolWindow.ProblemNode
+import com.intellij.analysis.problemsView.toolWindow.ProblemNodeI
 import com.intellij.analysis.problemsView.toolWindow.ProblemsView
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -29,12 +30,13 @@ class SweepProblemsAction : AnAction() {
         val tree = selectedPanel.tree
         val selectionPath = tree.selectionPath ?: return
         val problemNode = TreeUtil.getLastUserObject(ProblemNode::class.java, selectionPath) ?: return
+        val problem: ProblemNodeI = problemNode
         // Extract problem information
-        val message = problemNode.text
+        val message = problem.getText()
         val file = problemNode.file
         val document = file.findDocument() ?: return
 
-        val line = problemNode.line
+        val line = problem.getLine()
         // Get context with +/- 1 line, handling bounds
         val startLine = maxOf(0, line - 1)
         val endLine = minOf(document.lineCount - 1, line + 1)
@@ -56,7 +58,9 @@ class SweepProblemsAction : AnAction() {
 
             val chatComponent = ChatComponent.getInstance(project)
             chatComponent.appendToTextField(fixErrorPrompt)
+
             chatComponent.requestFocus()
+
         }
     }
 
@@ -64,11 +68,13 @@ class SweepProblemsAction : AnAction() {
         e.project?.let { project ->
             ProblemsView.getSelectedPanel(project)?.tree?.selectionPath?.let { path ->
                 TreeUtil.getLastUserObject(ProblemNode::class.java, path)?.let { node ->
-                    e.presentation.isVisible = node.severity >= 400
+                    val problem: ProblemNodeI = node
+                    e.presentation.isVisible = problem.getSeverity() >= 400
                     return
                 }
             }
         }
+
 
         e.presentation.isVisible = false
     }

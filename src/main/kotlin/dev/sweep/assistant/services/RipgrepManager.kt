@@ -39,14 +39,17 @@ class RipgrepManager : Disposable {
     private val availabilityLock = Any()
 
     init {
-        // Initialize ripgrep availability check on startup in background thread
-        ApplicationManager.getApplication().executeOnPooledThread {
+        val availabilityCheck = Runnable {
             try {
                 checkRipgrepAvailability()
             } catch (e: Exception) {
                 logger.warn("Failed to check ripgrep availability during initialization", e)
             }
         }
+
+        // IntelliJ services initialize asynchronously. Plain unit tests do not have an
+        // Application instance, so run the same initialization synchronously there.
+        ApplicationManager.getApplication()?.executeOnPooledThread(availabilityCheck) ?: availabilityCheck.run()
     }
 
     /**

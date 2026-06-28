@@ -2,15 +2,15 @@ import com.google.protobuf.gradle.id
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.models.ProductRelease
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     application
     id("java")
-    id("org.jetbrains.intellij.platform") version "2.2.0"
-    kotlin("jvm") version "2.1.0"
+    id("org.jetbrains.intellij.platform")
+    kotlin("jvm") version "2.3.0"
     id("com.google.protobuf") version "0.9.4"
-    kotlin("plugin.serialization") version "1.9.20"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    kotlin("plugin.serialization") version "2.3.0"
 }
 
 val remoteRobotVersion = "0.11.20"
@@ -19,13 +19,6 @@ val pluginName = "Self-Hosted Enterprise Updater"
 println("Building plugin: $pluginName with ID: $pluginId")
 group = "dev.sweep"
 version = "1.29.3"
-
-repositories {
-    mavenCentral()
-    intellijPlatform {
-        defaultRepositories()
-    }
-}
 
 intellijPlatform {
     autoReload.set(false) // this triggers unloading which is very annoying
@@ -41,7 +34,7 @@ intellijPlatform {
                 types.set(listOf(IntelliJPlatformType.WebStorm))
                 channels.set(listOf(ProductRelease.Channel.RELEASE))
                 sinceBuild.set("242")
-                untilBuild.set("243.*")
+                untilBuild.set(provider { null })
             }
 //            select {
 //                types.set(listOf(IntelliJPlatformType.DataGrip))
@@ -67,7 +60,7 @@ intellijPlatform {
                 )
                 channels.set(listOf(ProductRelease.Channel.RELEASE))
                 sinceBuild.set("241")
-                untilBuild.set("253.*")
+                untilBuild.set(provider { null })
             }
         }
     }
@@ -81,12 +74,14 @@ tasks {
         targetCompatibility = "17"
     }
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-        kotlinOptions.jvmTarget = "17"
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
     }
 
     patchPluginXml {
         sinceBuild.set("241")
-        untilBuild.set("253.*")
+        untilBuild.set(provider { null })
     }
 
     signPlugin {
@@ -115,7 +110,7 @@ tasks {
     }
 
     // Fix: Create a Copy task instead of DefaultTask for configuration cache compatibility
-    val copyRipgrepToSandbox by creating(Copy::class) {
+    val copyRipgrepToSandbox by registering(Copy::class) {
         val sandboxPluginDir =
             layout.buildDirectory
                 .dir("idea-sandbox/plugins/${project.name}")
@@ -133,6 +128,19 @@ tasks {
     // Hook the copy task to prepareSandbox
     prepareSandbox {
         finalizedBy(copyRipgrepToSandbox)
+    }
+
+    withType<Jar> {
+        // The enterprise updater installs the composed JAR directly, so these classes must be embedded.
+        from({
+            configurations.runtimeClasspath
+                .get()
+                .filter {
+                    it.name.contains("sqlite-jdbc") ||
+                        it.name.contains("java-diff-utils")
+                }.map { zipTree(it) }
+        })
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
     }
 
     buildPlugin {
@@ -158,31 +166,31 @@ tasks {
         )
     }
 
-    task<Exec>("e2e") {
+    register<Exec>("e2e") {
         commandLine("./bin/e2e")
     }
 
-    task<Exec>("format") {
+    register<Exec>("format") {
         group = "format"
         commandLine("./bin/format")
     }
 
-    task<Exec>("release") {
+    register<Exec>("release") {
         group = "plugin"
         commandLine("./bin/release")
     }
 
-    task<Exec>("installPlugin") {
+    register<Exec>("installPlugin") {
         group = "plugin"
         commandLine("./bin/install")
     }
 
-    task<Exec>("installCloudPlugin") {
+    register<Exec>("installCloudPlugin") {
         group = "plugin"
         commandLine("./bin/install", "--cloud")
     }
 
-    task<Exec>("uninstallPlugin") {
+    register<Exec>("uninstallPlugin") {
         group = "plugin"
         commandLine("./bin/uninstall")
     }
@@ -253,10 +261,10 @@ dependencies {
 
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.2")
     intellijPlatform {
+        intellijIdea("2026.1.3")
         // https://www.jetbrains.com/idea/download/other.html
 //        androidStudio("2024.3.2.11") // Android Studio Meerkat | 2024.3.2 Patch 11
 //        androidStudio("2025.1.1.11") // Android Studio Narwhal | 2025.1.1 Patch 11
-        intellijIdeaCommunity("2025.1")
 //        rustRover("2025.1")
 //        intellijIdeaCommunity("2023.3.8")
 //        intellijIdeaCommunity("2023.1.7")

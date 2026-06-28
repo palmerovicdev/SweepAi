@@ -645,7 +645,7 @@ class MessagesComponent(
             // Some nested UI builders access PSI/documents and may require WriteIntentReadAction
             // Use write-intent read action to satisfy both PSI reads and nested editor creation
             val real: JComponent =
-                WriteIntentReadAction.compute<JComponent, RuntimeException> {
+                WriteIntentReadAction.compute<JComponent> {
                     createComponent(
                         message = latestMessage,
                         index = messageIndex,

@@ -6,12 +6,6 @@ import com.github.difflib.patch.Patch
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.changes.Change
-import org.eclipse.jgit.diff.DiffAlgorithm
-import org.eclipse.jgit.diff.DiffFormatter
-import org.eclipse.jgit.diff.RawText
-import org.eclipse.jgit.diff.RawTextComparator
-import java.io.ByteArrayOutputStream
-import java.nio.charset.StandardCharsets
 
 fun getDiff(
     oldContent: String,
@@ -21,47 +15,27 @@ fun getDiff(
     context: Int = 3,
     cleanEndings: Boolean = false,
 ): String {
-    // Normalize line endings to LF for both inputs to ensure consistent comparison
     val normalizedOldContent = oldContent.replace("\r\n", "\n")
     val normalizedNewContent = newContent.replace("\r\n", "\n")
 
-    val diffOutput =
-        ByteArrayOutputStream()
-            .apply {
-                val (finalOldFile, finalNewFile) =
-                    if (oldFileName == newFileName) {
-                        "a/$oldFileName" to "b/$newFileName"
-                    } else {
-                        oldFileName to newFileName
-                    }
+    val (finalOldFile, finalNewFile) =
+        if (oldFileName == newFileName) {
+            "a/$oldFileName" to "b/$newFileName"
+        } else {
+            oldFileName to newFileName
+        }
 
-                val (oldText, newText) =
-                    if (cleanEndings) {
-                        RawText((normalizedOldContent.trimEnd() + "\n").toByteArray(StandardCharsets.UTF_8)) to
-                            RawText((normalizedNewContent.trimEnd() + "\n").toByteArray(StandardCharsets.UTF_8))
-                    } else {
-                        RawText(normalizedOldContent.toByteArray(StandardCharsets.UTF_8)) to
-                            RawText(normalizedNewContent.toByteArray(StandardCharsets.UTF_8))
-                    }
+    val (oldLines, newLines) =
+        if (cleanEndings) {
+            (normalizedOldContent.trimEnd() + "\n").lines() to
+                (normalizedNewContent.trimEnd() + "\n").lines()
+        } else {
+            normalizedOldContent.lines() to normalizedNewContent.lines()
+        }
 
-                val comparator = RawTextComparator.DEFAULT
-
-                val edits =
-                    DiffAlgorithm
-                        .getAlgorithm(DiffAlgorithm.SupportedAlgorithm.MYERS)
-                        .diff(comparator, oldText, newText)
-
-                DiffFormatter(this).apply {
-                    setContext(context)
-                    setDiffComparator(comparator)
-                    write("--- $finalOldFile\n".toByteArray())
-                    write("+++ $finalNewFile\n".toByteArray())
-                    format(edits, oldText, newText)
-                    flush()
-                }
-            }.toString(StandardCharsets.UTF_8)
-            .replace("\\ No newline at end of file\n", "")
-    return diffOutput
+    val patch: Patch<String> = DiffUtils.diff(oldLines, newLines)
+    return UnifiedDiffUtils.generateUnifiedDiff(finalOldFile, finalNewFile, oldLines, patch, context)
+        .joinToString("\n")
 }
 
 data class DiffGroup(
@@ -204,6 +178,10 @@ fun computeDiffGroups(
 
     if (newContent.isEmpty() && oldContent.isNotEmpty()) {
         return listOf(DiffGroup(deletions = oldContent, additions = "", index = 0))
+    }
+
+    if (oldContent.isEmpty() && newContent.isNotEmpty()) {
+        return listOf(DiffGroup(deletions = "", additions = newContent, index = 0))
     }
 
     val oldLines = oldContent.lines()

@@ -15,10 +15,10 @@ plugins {
 
 val remoteRobotVersion = "0.11.20"
 val pluginId = "dev.sweep.assistant"
-val pluginName = "Self-Hosted Enterprise Updater"
+val pluginName = "Sweep Self-Hosted"
 println("Building plugin: $pluginName with ID: $pluginId")
 group = "dev.sweep"
-version = "1.29.3"
+version = "1.29.4"
 
 intellijPlatform {
     autoReload.set(false) // this triggers unloading which is very annoying
@@ -131,7 +131,7 @@ tasks {
     }
 
     withType<Jar> {
-        // The enterprise updater installs the composed JAR directly, so these classes must be embedded.
+        // The self-hosted plugin installs the composed JAR directly, so these classes must be embedded.
         from({
             configurations.runtimeClasspath
                 .get()

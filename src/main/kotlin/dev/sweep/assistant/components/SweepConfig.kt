@@ -1066,6 +1066,18 @@ class SweepConfig(
         SweepSettings.getInstance().autocompleteExternalUrl = url
     }
 
+    fun getAutocompleteBackend(): String = SweepSettings.getInstance().autocompleteBackend
+
+    fun updateAutocompleteBackend(backend: String) {
+        SweepSettings.getInstance().autocompleteBackend = backend
+    }
+
+    fun getAutocompleteMlxModelRepo(): String = SweepSettings.getInstance().autocompleteMlxModelRepo
+
+    fun updateAutocompleteMlxModelRepo(repo: String) {
+        SweepSettings.getInstance().autocompleteMlxModelRepo = repo
+    }
+
     // Autocomplete exclusion banner visibility
     fun isHideAutocompleteExclusionBanner(): Boolean = state.hideAutocompleteExclusionBanner
 

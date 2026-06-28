@@ -19,12 +19,18 @@ import java.awt.event.ActionListener
 import java.net.URI
 import javax.swing.ButtonGroup
 import javax.swing.BoxLayout
+import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
+
+private const val BACKEND_LLAMACPP_LABEL = "llama.cpp (GGUF)"
+private const val BACKEND_MLX_LABEL = "MLX (Apple Silicon)"
+private const val BACKEND_LLAMACPP_KEY = "llamacpp"
+private const val BACKEND_MLX_KEY = "mlx"
 
 class SweepSettingsConfigurable(
     private val project: Project,
@@ -52,10 +58,22 @@ class SweepSettingsConfigurable(
         emptyText.text = "sweep-next-edit-0.5b.q8_0.gguf"
         columns = 32
     }
+    private val mlxModelRepoField = JBTextField().apply {
+        emptyText.text = "Cyanophyte/sweep-next-edit-v2-7B-mlx-8Bit"
+        columns = 32
+    }
     private val externalUrlField = JBTextField().apply {
         emptyText.text = "http://localhost:1234"
         columns = 32
     }
+
+    private val backendCombo = JComboBox(arrayOf(BACKEND_LLAMACPP_LABEL, BACKEND_MLX_LABEL))
+    private val mlxPlatformWarningLabel = JBLabel(" ").apply {
+        foreground = JBColor.RED
+    }
+
+    private val ggufRow = JPanel()
+    private val mlxRow = JPanel()
 
     private val managedPanel = JPanel()
     private val externalPanel = JPanel()
@@ -139,6 +157,15 @@ class SweepSettingsConfigurable(
             add(portField)
             add(javax.swing.Box.createHorizontalGlue())
         }
+        val backendRow = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            add(JBLabel("Backend:"))
+            add(javax.swing.Box.createRigidArea(Dimension(8, 0)))
+            add(backendCombo)
+            add(javax.swing.Box.createHorizontalGlue())
+        }
+
+        ggufRow.layout = BoxLayout(ggufRow, BoxLayout.Y_AXIS)
         val repoRow = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             add(JBLabel("Model Repo:"))
@@ -151,11 +178,55 @@ class SweepSettingsConfigurable(
             add(javax.swing.Box.createRigidArea(Dimension(8, 0)))
             add(modelFilenameField)
         }
+        ggufRow.add(repoRow)
+        ggufRow.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
+        ggufRow.add(filenameRow)
+
+        mlxRow.layout = BoxLayout(mlxRow, BoxLayout.Y_AXIS)
+        val mlxRepoRow = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            add(JBLabel("MLX Repo:"))
+            add(javax.swing.Box.createRigidArea(Dimension(8, 0)))
+            add(mlxModelRepoField)
+        }
+        mlxRow.add(mlxRepoRow)
+        mlxRow.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
+        mlxRow.add(mlxPlatformWarningLabel)
+
         managedPanel.add(portRow)
         managedPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        managedPanel.add(repoRow)
+        managedPanel.add(backendRow)
         managedPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        managedPanel.add(filenameRow)
+        managedPanel.add(ggufRow)
+        managedPanel.add(mlxRow)
+
+        backendCombo.addActionListener {
+            updateBackendRowsVisibility()
+            refreshMlxPlatformWarning()
+        }
+    }
+
+    private fun updateBackendRowsVisibility() {
+        val isMlx = backendCombo.selectedItem == BACKEND_MLX_LABEL
+        ggufRow.isVisible = !isMlx
+        mlxRow.isVisible = isMlx
+        component?.revalidate()
+        component?.repaint()
+    }
+
+    private fun isAppleSilicon(): Boolean {
+        val os = System.getProperty("os.name").lowercase()
+        val arch = System.getProperty("os.arch").lowercase()
+        return os.contains("mac") && (arch == "aarch64" || arch == "arm64")
+    }
+
+    private fun refreshMlxPlatformWarning() {
+        val isMlx = backendCombo.selectedItem == BACKEND_MLX_LABEL
+        mlxPlatformWarningLabel.text = if (isMlx && !isAppleSilicon()) {
+            "MLX requires macOS on Apple Silicon. The managed server will refuse to start on this platform."
+        } else {
+            " "
+        }
     }
 
     private fun buildExternalPanel() {
@@ -257,6 +328,9 @@ class SweepSettingsConfigurable(
 
     private fun currentManagedSelected(): Boolean = managedRadio.isSelected
 
+    private fun selectedBackendKey(): String =
+        if (backendCombo.selectedItem == BACKEND_MLX_LABEL) BACKEND_MLX_KEY else BACKEND_LLAMACPP_KEY
+
     override fun isModified(): Boolean {
         val externalUrlText = externalUrlField.text.trim()
         // Treat external mode as persisted-blank if user picked external but URL is invalid
@@ -272,6 +346,8 @@ class SweepSettingsConfigurable(
             portField.intValue() != config.getAutocompleteLocalPort() ||
             modelRepoField.text.trim() != config.getAutocompleteLocalModelRepo() ||
             modelFilenameField.text.trim() != config.getAutocompleteLocalModelFilename() ||
+            selectedBackendKey() != config.getAutocompleteBackend() ||
+            mlxModelRepoField.text.trim() != config.getAutocompleteMlxModelRepo() ||
             externalUrlForCompare != config.getAutocompleteExternalUrl() ||
             exclusionPatterns() != config.getAutocompleteExclusionPatterns()
     }
@@ -282,6 +358,8 @@ class SweepSettingsConfigurable(
         val oldExternalUrl = settings.autocompleteExternalUrl
         val oldRepo = settings.autocompleteLocalModelRepo
         val oldFilename = settings.autocompleteLocalModelFilename
+        val oldBackend = settings.autocompleteBackend
+        val oldMlxRepo = settings.autocompleteMlxModelRepo
         val wasManaged = oldExternalUrl.isBlank()
 
         settings.nextEditPredictionFlagOn = enabledField.isSelected
@@ -294,6 +372,8 @@ class SweepSettingsConfigurable(
         config.updateAutocompleteLocalMode(localModeField.isSelected)
         config.updateAutocompleteLocalModelRepo(modelRepoField.text.trim())
         config.updateAutocompleteLocalModelFilename(modelFilenameField.text.trim())
+        config.updateAutocompleteBackend(selectedBackendKey())
+        config.updateAutocompleteMlxModelRepo(mlxModelRepoField.text.trim())
 
         val externalUrlText = externalUrlField.text.trim()
         val newExternalUrl =
@@ -307,6 +387,8 @@ class SweepSettingsConfigurable(
         val newPort = portField.intValue()
         val newRepo = modelRepoField.text.trim()
         val newFilename = modelFilenameField.text.trim()
+        val newBackend = selectedBackendKey()
+        val newMlxRepo = mlxModelRepoField.text.trim()
 
         val manager = LocalAutocompleteServerManager.getInstance()
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -316,11 +398,15 @@ class SweepSettingsConfigurable(
                 }
                 isNowManaged -> {
                     val switchedFromExternal = wasLocalMode && !wasManaged
-                    val modelChanged = newRepo != oldRepo || newFilename != oldFilename
+                    val backendChanged = newBackend != oldBackend
+                    val modelChanged = when (newBackend) {
+                        BACKEND_MLX_KEY -> newMlxRepo != oldMlxRepo
+                        else -> newRepo != oldRepo || newFilename != oldFilename
+                    }
                     val portChanged = newPort != oldPort
                     if (!wasLocalMode || switchedFromExternal) {
                         manager.ensureServerRunning()
-                    } else if (portChanged || modelChanged) {
+                    } else if (portChanged || modelChanged || backendChanged) {
                         manager.restartServer()
                     }
                 }
@@ -341,6 +427,11 @@ class SweepSettingsConfigurable(
         portField.value = config.getAutocompleteLocalPort()
         modelRepoField.text = config.getAutocompleteLocalModelRepo()
         modelFilenameField.text = config.getAutocompleteLocalModelFilename()
+        mlxModelRepoField.text = config.getAutocompleteMlxModelRepo()
+        backendCombo.selectedItem = when (config.getAutocompleteBackend()) {
+            BACKEND_MLX_KEY -> BACKEND_MLX_LABEL
+            else -> BACKEND_LLAMACPP_LABEL
+        }
         val savedUrl = config.getAutocompleteExternalUrl()
         externalUrlField.text = savedUrl
         if (savedUrl.isBlank()) {
@@ -353,6 +444,8 @@ class SweepSettingsConfigurable(
         refreshUrlValidation()
         updatePanelVisibility()
         updateLocalControlsEnabled()
+        updateBackendRowsVisibility()
+        refreshMlxPlatformWarning()
     }
 
     override fun disposeUIResources() {

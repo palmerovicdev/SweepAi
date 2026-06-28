@@ -186,6 +186,11 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
 
     var autocompleteExternalUrl: String = ""
 
+    // "llamacpp" (default, GGUF via sweep-autocomplete) or "mlx" (Apple Silicon, sweep-autocomplete-mlx)
+    var autocompleteBackend: String = "llamacpp"
+
+    var autocompleteMlxModelRepo: String = "Cyanophyte/sweep-next-edit-v2-7B-mlx-8Bit"
+
     fun ensureDefaultPromptsInitialized() {
         var addedPrompt = false
 

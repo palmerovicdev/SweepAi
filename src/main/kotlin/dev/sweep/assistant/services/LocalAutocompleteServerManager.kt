@@ -124,6 +124,14 @@ class LocalAutocompleteServerManager : Disposable {
         if (!isManagedMode()) return
         if (isStarting) return
         if (isServerHealthy()) return
+
+        if (currentBackend() == "mlx" && !isMacArm) {
+            val msg = "MLX backend requires macOS on Apple Silicon. Switch to llama.cpp backend or use External mode."
+            onStatus?.invoke(msg)
+            showNotification(msg, NotificationType.ERROR)
+            return
+        }
+
         isStarting = true
 
         try {
@@ -157,17 +165,34 @@ class LocalAutocompleteServerManager : Disposable {
 
     private val isWindows = System.getProperty("os.name").lowercase().contains("win")
 
+    private val isMacArm: Boolean
+        get() {
+            val os = System.getProperty("os.name").lowercase()
+            val arch = System.getProperty("os.arch").lowercase()
+            return os.contains("mac") && (arch == "aarch64" || arch == "arm64")
+        }
+
+    private fun currentBackend(): String =
+        try {
+            SweepSettings.getInstance().autocompleteBackend
+        } catch (_: Exception) {
+            "llamacpp"
+        }
+
     private fun buildUvxCommand(uvxPath: String, port: Int): List<String> =
-        if (isWindows) {
-            listOf(
-                uvxPath,
-                "--python", "3.12",
-                "--extra-index-url", "https://abetlen.github.io/llama-cpp-python/whl/cpu",
-                "sweep-autocomplete",
-                "--port", port.toString(),
-            )
-        } else {
-            listOf(uvxPath, "sweep-autocomplete", "--port", port.toString())
+        when (currentBackend()) {
+            "mlx" -> listOf(uvxPath, "sweep-autocomplete-mlx", "--port", port.toString())
+            else -> if (isWindows) {
+                listOf(
+                    uvxPath,
+                    "--python", "3.12",
+                    "--extra-index-url", "https://abetlen.github.io/llama-cpp-python/whl/cpu",
+                    "sweep-autocomplete",
+                    "--port", port.toString(),
+                )
+            } else {
+                listOf(uvxPath, "sweep-autocomplete", "--port", port.toString())
+            }
         }
 
     private fun startServerProcess(uvxPath: String, onStatus: ((String) -> Unit)? = null) {
@@ -189,13 +214,23 @@ class LocalAutocompleteServerManager : Disposable {
         }
 
         // Inject model selection env vars after the clear+putAll above so they survive.
-        // sweep-autocomplete reads MODEL_REPO and MODEL_FILENAME from its environment.
+        // Both backends read MODEL_REPO from the environment.
+        // GGUF backend (sweep-autocomplete) additionally reads MODEL_FILENAME for the .gguf file.
+        // MLX backend (sweep-autocomplete-mlx) loads the repo directly with mlx_lm.
         try {
             val settings = SweepSettings.getInstance()
-            val repo = settings.autocompleteLocalModelRepo.trim()
-            val filename = settings.autocompleteLocalModelFilename.trim()
-            if (repo.isNotEmpty()) pb.environment()["MODEL_REPO"] = repo
-            if (filename.isNotEmpty()) pb.environment()["MODEL_FILENAME"] = filename
+            when (settings.autocompleteBackend) {
+                "mlx" -> {
+                    val repo = settings.autocompleteMlxModelRepo.trim()
+                    if (repo.isNotEmpty()) pb.environment()["MODEL_REPO"] = repo
+                }
+                else -> {
+                    val repo = settings.autocompleteLocalModelRepo.trim()
+                    val filename = settings.autocompleteLocalModelFilename.trim()
+                    if (repo.isNotEmpty()) pb.environment()["MODEL_REPO"] = repo
+                    if (filename.isNotEmpty()) pb.environment()["MODEL_FILENAME"] = filename
+                }
+            }
         } catch (_: Throwable) {
             // Fall back to package defaults
         }

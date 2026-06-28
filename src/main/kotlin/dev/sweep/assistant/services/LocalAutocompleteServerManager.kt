@@ -59,13 +59,35 @@ class LocalAutocompleteServerManager : Disposable {
             DEFAULT_PORT
         }
 
-    fun getServerUrl(): String = "http://localhost:${getPort()}"
+    private fun externalUrl(): String =
+        try {
+            SweepSettings.getInstance().autocompleteExternalUrl
+        } catch (_: Exception) {
+            ""
+        }
+
+    fun isManagedMode(): Boolean = externalUrl().isBlank()
+
+    fun getServerUrl(): String {
+        val ext = externalUrl()
+        return if (ext.isBlank()) "http://localhost:${getPort()}" else ext.trimEnd('/')
+    }
 
     fun ensureServerRunning() {
         ensureServerRunning(null)
     }
 
     fun ensureServerRunning(onStatus: ((String) -> Unit)?) {
+        if (!isManagedMode()) {
+            onStatus?.invoke("Checking external server at ${getServerUrl()}...")
+            if (isServerHealthy()) {
+                onStatus?.invoke("External server is reachable.")
+            } else {
+                onStatus?.invoke("External server at ${getServerUrl()} is not reachable.")
+                logger.warn("External autocomplete server at ${getServerUrl()} is not reachable")
+            }
+            return
+        }
         onStatus?.invoke("Checking if server is already running...")
         if (isServerHealthy()) {
             onStatus?.invoke("Server is already running.")
@@ -79,22 +101,27 @@ class LocalAutocompleteServerManager : Disposable {
     }
 
     fun isServerHealthy(): Boolean =
+        isUrlHealthy(getServerUrl())
+
+    fun isUrlHealthy(url: String): Boolean =
         try {
+            val base = url.trimEnd('/')
             val request =
                 HttpRequest
                     .newBuilder()
-                    .uri(URI.create(getServerUrl()))
+                    .uri(URI.create("$base/health"))
                     .timeout(Duration.ofMillis(HEALTH_CHECK_TIMEOUT_MS))
                     .GET()
                     .build()
             val response = httpClient.send(request, HttpResponse.BodyHandlers.discarding())
-            response.statusCode() in 200..499
+            response.statusCode() in 200..299
         } catch (e: Exception) {
             false
         }
 
     @Synchronized
     private fun startServer(onStatus: ((String) -> Unit)? = null) {
+        if (!isManagedMode()) return
         if (isStarting) return
         if (isServerHealthy()) return
         isStarting = true
@@ -159,6 +186,18 @@ class LocalAutocompleteServerManager : Disposable {
             }
         } catch (_: Throwable) {
             // Fall back to default environment
+        }
+
+        // Inject model selection env vars after the clear+putAll above so they survive.
+        // sweep-autocomplete reads MODEL_REPO and MODEL_FILENAME from its environment.
+        try {
+            val settings = SweepSettings.getInstance()
+            val repo = settings.autocompleteLocalModelRepo.trim()
+            val filename = settings.autocompleteLocalModelFilename.trim()
+            if (repo.isNotEmpty()) pb.environment()["MODEL_REPO"] = repo
+            if (filename.isNotEmpty()) pb.environment()["MODEL_FILENAME"] = filename
+        } catch (_: Throwable) {
+            // Fall back to package defaults
         }
 
         // Redirect stdout to /dev/null — the server communicates via HTTP, not stdout.
@@ -308,6 +347,7 @@ class LocalAutocompleteServerManager : Disposable {
     }
 
     fun reportFailure() {
+        if (!isManagedMode()) return
         consecutiveFailures++
         if (consecutiveFailures >= RESTART_THRESHOLD) {
             val timeSinceLastRestart = System.currentTimeMillis() - lastRestartTime
@@ -327,10 +367,19 @@ class LocalAutocompleteServerManager : Disposable {
     }
 
     fun restartServer() {
+        if (!isManagedMode()) return
         logger.info("Restarting local autocomplete server")
         lastRestartTime = System.currentTimeMillis()
         stopServer()
         startServer()
+    }
+
+    /**
+     * Public stop that callers (e.g. settings panel) can invoke when transitioning
+     * away from managed mode. No-op if no managed process is running.
+     */
+    fun stopManagedServer() {
+        stopServer()
     }
 
     /**

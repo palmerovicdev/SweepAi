@@ -180,6 +180,12 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
 
     var autocompleteLocalPort: Int = 8081
 
+    var autocompleteLocalModelRepo: String = "sweepai/sweep-next-edit-0.5B"
+
+    var autocompleteLocalModelFilename: String = "sweep-next-edit-0.5b.q8_0.gguf"
+
+    var autocompleteExternalUrl: String = ""
+
     fun ensureDefaultPromptsInitialized() {
         var addedPrompt = false
 

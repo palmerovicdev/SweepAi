@@ -17,6 +17,7 @@ import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.impl.EditorComponentImpl
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -1045,6 +1046,24 @@ class SweepConfig(
 
     fun updateAutocompleteLocalPort(port: Int) {
         SweepSettings.getInstance().autocompleteLocalPort = port
+    }
+
+    fun getAutocompleteLocalModelRepo(): String = SweepSettings.getInstance().autocompleteLocalModelRepo
+
+    fun updateAutocompleteLocalModelRepo(repo: String) {
+        SweepSettings.getInstance().autocompleteLocalModelRepo = repo
+    }
+
+    fun getAutocompleteLocalModelFilename(): String = SweepSettings.getInstance().autocompleteLocalModelFilename
+
+    fun updateAutocompleteLocalModelFilename(filename: String) {
+        SweepSettings.getInstance().autocompleteLocalModelFilename = filename
+    }
+
+    fun getAutocompleteExternalUrl(): String = SweepSettings.getInstance().autocompleteExternalUrl
+
+    fun updateAutocompleteExternalUrl(url: String) {
+        SweepSettings.getInstance().autocompleteExternalUrl = url
     }
 
     // Autocomplete exclusion banner visibility
@@ -4819,67 +4838,45 @@ class SweepConfig(
                                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                                 border = JBUI.Borders.empty(4, 16, 8, 16)
                                 add(
-                                    JCheckBox("Enable Local Autocomplete Server").apply {
-                                        isSelected = isAutocompleteLocalMode()
-                                        withSweepFont(project)
-                                        addActionListener {
-                                            updateAutocompleteLocalMode(isSelected)
-                                        }
+                                    JPanel().apply {
+                                        layout = BoxLayout(this, BoxLayout.X_AXIS)
+                                        add(
+                                            JLabel("Local autocomplete server").apply {
+                                                withSweepFont(project)
+                                            },
+                                        )
+                                        add(Box.createRigidArea(Dimension(8.scaled, 0)))
+                                        add(serverStatusLabel)
+                                        add(Box.createHorizontalGlue())
                                     },
                                 )
-                                add(Box.createRigidArea(Dimension(0, 2.scaled)))
+                                add(Box.createRigidArea(Dimension(0, 4.scaled)))
                                 add(
-                                    JLabel("Runs autocomplete locally via 'uvx sweep-autocomplete'. Will auto-install uv if needed.").apply {
-                                        withSweepFont(project, scale = 0.85f)
-                                        foreground = JBColor.GRAY
-                                        font = font.deriveFont(Font.ITALIC)
-                                        border = JBUI.Borders.emptyLeft(24)
-                                    },
-                                )
-                            },
-                            gbc,
-                        )
-
-                        // Port + Start Server inline
-                        gbc.gridy = 8
-                        add(
-                            JPanel().apply {
-                                layout = BoxLayout(this, BoxLayout.X_AXIS)
-                                border = JBUI.Borders.empty(4, 40, 8, 16)
-
-                                add(
-                                    JLabel("Port").apply {
-                                        withSweepFont(project)
-                                    },
-                                )
-                                add(Box.createRigidArea(Dimension(8.scaled, 0)))
-                                add(
-                                    JTextField(getAutocompleteLocalPort().toString(), 5).apply {
-                                        withSweepFont(project)
-                                        maximumSize = Dimension(80.scaled, 30.scaled)
-                                        addFocusListener(
-                                            object : java.awt.event.FocusAdapter() {
-                                                override fun focusLost(e: java.awt.event.FocusEvent?) {
-                                                    text.toIntOrNull()?.let { port ->
-                                                        if (port in 1..65535) {
-                                                            updateAutocompleteLocalPort(port)
-                                                        }
-                                                    }
+                                    JPanel().apply {
+                                        layout = BoxLayout(this, BoxLayout.X_AXIS)
+                                        add(
+                                            JButton("Open Sweep Autocomplete settings").apply {
+                                                withSweepFont(project)
+                                                addActionListener {
+                                                    ShowSettingsUtil.getInstance()
+                                                        .showSettingsDialog(project, "Sweep Autocomplete")
                                                 }
                                             },
                                         )
+                                        add(Box.createRigidArea(Dimension(12.scaled, 0)))
+                                        add(
+                                            JButton("Start in terminal", AllIcons.Actions.Execute).apply {
+                                                withSweepFont(project)
+                                                toolTipText = "Open a terminal tab and run sweep-autocomplete there"
+                                                addActionListener {
+                                                    LocalAutocompleteServerManager.getInstance()
+                                                        .startServerInTerminal(project)
+                                                }
+                                            },
+                                        )
+                                        add(Box.createHorizontalGlue())
                                     },
                                 )
-                                add(Box.createRigidArea(Dimension(12.scaled, 0)))
-                                add(
-                                    JButton("Start Server", AllIcons.Actions.Execute).apply {
-                                        withSweepFont(project)
-                                        addActionListener {
-                                            LocalAutocompleteServerManager.getInstance().startServerInTerminal(project)
-                                        }
-                                    },
-                                )
-                                add(Box.createHorizontalGlue())
                             },
                             gbc,
                         )

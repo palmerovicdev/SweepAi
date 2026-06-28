@@ -21,6 +21,7 @@ import dev.sweep.assistant.utils.generateDiffStringFromUnversionedFiles
 import dev.sweep.assistant.utils.getConnection
 import dev.sweep.assistant.utils.getCurrentBranchName
 import dev.sweep.assistant.utils.getRecentCommitMessages
+import dev.sweep.assistant.utils.showNotification
 import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.time.Instant

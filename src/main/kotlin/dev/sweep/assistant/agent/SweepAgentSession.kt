@@ -380,6 +380,53 @@ class SweepAgentSession(
         ) ?: update
 
     /**
+     * Records a completion for a tool call executed by an external agent
+     * (OpenCode, Codex). Skips scheduling — the agent already executed the tool
+     * — but goes through the shared drain queue so the UI update stays
+     * single-threaded and identical to the local path (plan §7.3).
+     *
+     * Callers seed [annotations.toolCalls] on the target message before this
+     * runs; here we only need to make sure a [ToolJob] exists in [jobsById]
+     * with the right message index so [drainCompletedQueue] can bind the
+     * completion to that message.
+     */
+    fun recordExternalCompletion(
+        call: CompletedToolCall,
+        boundMessageIndex: Int? = null,
+    ) {
+        val resolvedIndex =
+            boundMessageIndex
+                ?: jobsById[call.toolCallId]?.messageIndex
+                ?: run {
+                    val messageList = getMessageList() ?: return
+                    val lastAssistant = messageList.indexOfLastRole(MessageRole.ASSISTANT)
+                    if (lastAssistant >= 0) lastAssistant else (messageList.size() - 1).coerceAtLeast(0)
+                }
+
+        jobsById.compute(call.toolCallId) { _, existing ->
+            existing
+                ?: ToolJob(
+                    toolCall =
+                        ToolCall(
+                            toolCallId = call.toolCallId,
+                            toolName = call.toolName,
+                            rawText = call.resultString,
+                            fullyFormed = true,
+                            isMcp = call.isMcp,
+                            mcpProperties = call.mcpProperties,
+                        ),
+                    messageIndex = resolvedIndex,
+                    conversationId = conversationId,
+                    status = ToolCallStatus.FINISHED,
+                    startedAt = System.currentTimeMillis(),
+                    completedAt = System.currentTimeMillis(),
+                )
+        }
+
+        enqueueCompletedToolCalls(listOf(call), alreadyRecorded = false)
+    }
+
+    /**
      * Ingests tool calls incrementally from streaming.
      * This method is called as tool calls are streamed from the backend.
      */
@@ -417,8 +464,15 @@ class SweepAgentSession(
                         else -> existing // Ignore updates while running/finished/cancelled
                     }
 
+                // External-agent tool calls (OpenCode/Codex) are executed by the
+                // agent itself; Sweep only observes them. Skip scheduling so we
+                // don't re-run the tool locally — [recordExternalCompletion]
+                // will finalize the [ToolJob] when the completion arrives.
+                val isExternalExecutor = updated.toolCall.mcpProperties["executor"] != null
+
                 // Schedule if ready, not already scheduled, and not cancelled
-                if (updated.status == ToolCallStatus.QUEUED &&
+                if (!isExternalExecutor &&
+                    updated.status == ToolCallStatus.QUEUED &&
                     updated.toolCall.fullyFormed &&
                     updated.future == null &&
                     !isToolExecutionCancelled()

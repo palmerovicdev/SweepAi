@@ -1,6 +1,6 @@
 # Plan de Implementación: Chat con Agentes Externos (OpenCode y Codex)
 
-> Versión: 1 · Fecha: 2026-07-05 · Estado: **Fase 3 completada** (Codex provider integrado; queda pendiente Fase 4 = engine wiring + integración en `Stream.start()`).
+> Versión: 1 · Fecha: 2026-07-05 · Estado: **Fase 4 completada** (engine orquesta OpenCode/Codex vía `Stream.start()`; queda pendiente Fase 5 = UX polish).
 > Reemplaza para efectos de implementación al MVP definido en `acp-chat-implementation.md` (que se mantiene como referencia futura para agentes ACP nativos, ver §3.4).
 > Complementa a `local-chat-implementation.md` (chat local con un LLM directo vía OpenAI-compatible API).
 
@@ -12,7 +12,7 @@
 | Fase 1 — Data models + Settings + skeleton | ✅ hecho (7 campos, pestaña "Chat Provider", registry, session store, engine stub) |
 | Fase 2 — OpenCode provider | ✅ hecho (process + HTTP/SSE + adapter + Test Connection) |
 | Fase 3 — Codex provider | ✅ hecho (process + JSON-RPC client + adapter + provider + Test Connection) |
-| Fase 4 — Engine + Stream integration | ⏳ pendiente |
+| Fase 4 — Engine + Stream integration | ✅ hecho (engine `stream`/`cancel`/`onProviderChanged` + Stream routing + `recordExternalCompletion` + guard en `ingestToolCalls`) |
 | Fase 5 — UX polish | ⏳ pendiente |
 | Fase 6 — Tests, docs, release | ⏳ pendiente |
 
@@ -806,14 +806,16 @@ Estas quedan como *TBD* para RFC interna, no bloqueantes para arrancar Fase 1.
 - [x] Registrar `CodexAgentProvider` en `ExternalAgentProviderRegistry.registerBuiltIns()`.
 - [ ] Smoke test manual: prompt en un repo pequeño, ver tool calls y diffs. (Pendiente de ejecutar en Fase 4/6.)
 
-### Fase 4 — Engine + Stream integration (~3 días)
+### Fase 4 — Engine + Stream integration (~3 días) — ✅ hecho
 
-- [ ] `ExternalAgentChatEngine.kt`: implementar `stream()`, `cancel()`, `onProviderChanged()`.
-- [ ] `ExternalAgentSessionStoreImpl.kt`: usar el `Connection` de `ChatHistory`.
-- [ ] Modificar `Stream.start()`: `when(settings.chatProviderId)` (§13.1).
-- [ ] Añadir `SweepAgentSession.recordExternalCompletion(...)`.
-- [ ] Cancelación end-to-end: botón Stop → `cancel(conversationId)` → `provider.cancelCurrentTurn(...)`.
-- [ ] Reconexión: al reabrir conversación existente, engine llama `resumeSession(...)` transparentemente.
+- [x] `ExternalAgentChatEngine.kt`: `stream()` resuelve provider + `ensureRunning` + resume/create sesión + drena `Flow<ExternalAgentEvent>` en `Message` incrementales; `cancel()` invoca `provider.cancelCurrentTurn`; `onProviderChanged()` cancela los turns en vuelo cuyo provider cambió.
+- [x] `ExternalAgentSessionStoreImpl.kt`: ya existía desde Fase 1 sobre la infra de `ChatHistory`; consumido por el engine.
+- [x] `Stream.start()`: rama temprana `when(settings.chatProviderId in {"opencode","codex"})` que delega a `startExternalAgentTurn(...)` (nuevo helper) manteniendo la lógica de mensajes/snippets/mentions intacta.
+- [x] `SweepAgentSession.recordExternalCompletion(...)`: escribe directo en `completedToolCalls` sin schedular ejecución, reusando el drain queue existente.
+- [x] Cancelación end-to-end: `Stream.stop()` llama `ExternalAgentChatEngine.cancelBlocking(convId)` + cancela `streamingJob`; el engine propaga la cancelación y marca el mensaje como `stopStreaming = "stop"`.
+- [x] Reconexión: `resolveRemoteSession()` consulta el store, prueba `resumeSession`, y cae a `createSession` transparentemente si el thread ya no existe.
+- [x] Guard adicional: `SweepAgentSession.ingestToolCalls` salta `scheduleIfReady` cuando `mcpProperties["executor"]` está presente, para no re-ejecutar localmente los tool calls del agente externo.
+- [ ] Smoke test manual con `chatProviderId=opencode` y `codex` una vez el ecosistema local esté preparado (Fase 6).
 
 ### Fase 5 — UX polish (~2 días)
 

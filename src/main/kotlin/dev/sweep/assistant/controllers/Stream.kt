@@ -21,6 +21,7 @@ import com.intellij.util.messages.Topic
 import dev.sweep.assistant.agent.SweepAgent
 import dev.sweep.assistant.agent.tools.ListFilesTool
 import dev.sweep.assistant.agent.tools.TerminalApiWrapper
+import dev.sweep.assistant.api.external.ExternalAgentChatEngine
 import dev.sweep.assistant.components.*
 import dev.sweep.assistant.components.ChatComponent
 import dev.sweep.assistant.data.*
@@ -28,6 +29,7 @@ import dev.sweep.assistant.entities.EntitiesCache
 import dev.sweep.assistant.services.*
 import dev.sweep.assistant.settings.SweepEnvironmentConstants.Defaults.BILLING_URL
 import dev.sweep.assistant.settings.SweepMetaData
+import dev.sweep.assistant.settings.SweepSettings
 import dev.sweep.assistant.tracking.EventType
 import dev.sweep.assistant.tracking.TelemetryService
 import dev.sweep.assistant.utils.*
@@ -269,6 +271,20 @@ class Stream(
             } else {
                 currentFilePath
             }
+
+        // External-agent providers (OpenCode, Codex) bypass the Sweep cloud path
+        // entirely and delegate the turn to a CLI agent (plan §7 / §13.1).
+        val settingsSnapshot = SweepSettings.getInstance()
+        if (settingsSnapshot.chatProviderId in setOf("opencode", "codex")) {
+            startExternalAgentTurn(
+                currentMarkdownDisplay = currentMarkdownDisplay,
+                conversationId = currentConversationId,
+                sessionMessageList = sessionMessageList,
+                effectiveCurrentFilePath = effectiveCurrentFilePath,
+                onMessageUpdated = onMessageUpdated,
+            )
+            return
+        }
 
         // Check current mode and apply mode-specific settings
         val currentMode = SweepComponent.getMode(project)
@@ -834,6 +850,80 @@ class Stream(
         }
     }
 
+    /**
+     * External-provider turn (OpenCode / Codex). Delegates the entire chat to
+     * [ExternalAgentChatEngine], but reuses this Stream's cancellation
+     * machinery so the Stop button and mid-conversation provider swaps behave
+     * identically to the cloud path (plan §7 / §13.1).
+     */
+    private suspend fun startExternalAgentTurn(
+        currentMarkdownDisplay: MarkdownDisplay,
+        conversationId: String,
+        sessionMessageList: SessionMessageList,
+        effectiveCurrentFilePath: String?,
+        onMessageUpdated: Stream.(message: Message) -> Unit,
+    ) {
+        currentMarkdownDisplay.startStreaming()
+        shouldHideStopButton = false
+        StreamStateService.getInstance(project).notify(true, false, true, conversationId)
+
+        val engine = ExternalAgentChatEngine.getInstance(project)
+        val finalMessages = sessionMessageList.snapshot()
+        val sweepConfig = SweepConfig.getInstance(project)
+        val rules =
+            try {
+                sweepConfig.getCurrentRulesContent() ?: sweepConfig.getState().rules
+            } catch (_: Exception) {
+                sweepConfig.getState().rules
+            }
+
+        // Publish the streaming job so Stream.stop() cancels the flow collector.
+        streamingJob =
+            coroutineScope.launch {
+                try {
+                    engine.stream(
+                        conversationId = conversationId,
+                        finalMessages = finalMessages,
+                        currentFilePath = effectiveCurrentFilePath,
+                        systemPromptExtras = rules.orEmpty(),
+                        onMessageUpdated = { msg -> this@Stream.onMessageUpdated(msg) },
+                    )
+                } catch (e: CancellationException) {
+                    // Propagate cancellation — Stream.stop() already interrupted the remote turn.
+                    throw e
+                } catch (e: Throwable) {
+                    logger.warn("[Stream.startExternalAgentTurn] engine failed: ${e.message}", e)
+                    val errorMessage =
+                        Message(
+                            role = MessageRole.ASSISTANT,
+                            content = "**Error:** ${e.message ?: e.javaClass.simpleName}",
+                            annotations =
+                                Annotations(
+                                    stopStreaming = "stop",
+                                    completionTime = System.currentTimeMillis(),
+                                ),
+                        )
+                    this@Stream.onMessageUpdated(errorMessage)
+                }
+            }
+
+        try {
+            streamingJob?.join()
+        } finally {
+            currentMarkdownDisplay.stopStreaming()
+            currentMarkdownDisplay.cursorPanel.setText(null)
+            StreamStateService.getInstance(project).notify(false, false, false, conversationId)
+
+            ApplicationManager.getApplication().invokeLater {
+                if (project.isDisposed) return@invokeLater
+                project.messageBus.syncPublisher(RESPONSE_FINISHED_TOPIC).onResponseFinished(
+                    conversationId = conversationId,
+                )
+                ChatHistory.getInstance(project).saveChatMessages(conversationId = conversationId)
+            }
+        }
+    }
+
     private suspend fun streamFromBackend(
         mapper: ObjectMapper,
         uniqueSnippets: List<Snippet>,
@@ -1122,6 +1212,12 @@ class Stream(
         // Only stop tool execution for this specific session, not all sessions
         sessionConversationId?.let { convId ->
             SweepAgent.getInstance(project).stopToolExecution(convId)
+            // Interrupt any in-flight remote turn on the external provider
+            // (best-effort; the local flow collector is cancelled below when
+            // we cancel `streamingJob`).
+            if (SweepSettings.getInstance().chatProviderId in setOf("opencode", "codex")) {
+                ExternalAgentChatEngine.getInstance(project).cancelBlocking(convId)
+            }
         }
         if (streamingJob == null) return
         cancelledByUser = true

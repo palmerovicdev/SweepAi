@@ -401,7 +401,7 @@ class AgentActionBlockDisplay(
             toolCall: ToolCall,
             completedToolCall: CompletedToolCall?,
         ): String {
-            val baseTooltip =
+            val baseTooltipRaw =
                 FileDisplayUtils.getFullPathTooltip(
                     toolCall,
                     completedToolCall,
@@ -409,9 +409,24 @@ class AgentActionBlockDisplay(
                     ::getDisplayParameterForTool,
                 )
 
+            // Flag tool calls executed by an external agent (OpenCode / Codex —
+            // plan §7.3): Sweep only observed the call, it did not run it.
+            val externalExecutor =
+                (completedToolCall?.mcpProperties ?: toolCall.mcpProperties)["executor"]?.takeIf { it.isNotBlank() }
+            val baseTooltip =
+                if (externalExecutor != null) {
+                    "Executed by $externalExecutor (external agent)\n$baseTooltipRaw"
+                } else {
+                    baseTooltipRaw
+                }
+
             // Only augment MCP tool calls when the setting is enabled
             if (!toolCall.isMcp) {
-                return baseTooltip
+                return if (externalExecutor != null) {
+                    "<html>${baseTooltip.replace("\n", "<br>")}</html>"
+                } else {
+                    baseTooltip
+                }
             }
 
             val sweepConfig = SweepConfig.getInstance(project)

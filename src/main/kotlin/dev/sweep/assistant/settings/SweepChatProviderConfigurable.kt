@@ -31,7 +31,6 @@ private data class ProviderChoice(val id: String, val label: String) {
 
 private val PROVIDER_CHOICES =
     listOf(
-        ProviderChoice("sweep-cloud", "Sweep Cloud (default)"),
         ProviderChoice("local", "Local model"),
         ProviderChoice("opencode", "OpenCode"),
         ProviderChoice("codex", "Codex"),
@@ -39,29 +38,7 @@ private val PROVIDER_CHOICES =
 
 private const val OPENCODE_ID = "opencode"
 private const val CODEX_ID = "codex"
-
-private val OPENCODE_AGENTS = arrayOf("build", "plan", "chat")
-private val CODEX_APPROVAL_POLICIES = arrayOf("never", "on-request", "on-failure", "untrusted")
-private val CODEX_SANDBOXES = arrayOf("read-only", "workspace-write", "danger-full-access")
-
-// Empty first entry means "use Codex's persisted default" (from ~/.codex/config.toml).
-// The combo is editable so users can also type a custom model id.
-private val CODEX_MODELS =
-    arrayOf(
-        "",
-        "gpt-5-codex",
-        "gpt-5.5",
-        "gpt-5",
-        "gpt-5-mini",
-        "gpt-4.1",
-        "o3",
-        "o3-mini",
-        "o4-mini",
-    )
-private val CODEX_REASONING_EFFORTS =
-    arrayOf("", "minimal", "low", "medium", "high")
-private val CODEX_THINKING_MODES =
-    arrayOf("", "shown", "hidden")
+private val CODEX_THINKING_MODES = arrayOf("", "shown", "hidden")
 
 /**
  * Fase 1 (§13.2) — Chat Provider settings tab.
@@ -82,32 +59,10 @@ class SweepChatProviderConfigurable(
 
     // OpenCode fields
     private val opencodeCommandField = JBTextField().apply { columns = 32 }
-    private val opencodeExtraArgsField = JBTextField().apply { columns = 32 }
-    private val opencodeBaseUrlField =
-        JBTextField().apply {
-            columns = 32
-            emptyText.text = "Leave empty to auto-start opencode serve"
-        }
-    private val opencodeAgentCombo = JComboBox(OPENCODE_AGENTS)
-    private val opencodeModelField = JBTextField().apply {
-        columns = 32
-        emptyText.text = "providerID/modelID (e.g. anthropic/claude-3.5-sonnet). Leave empty for server default."
-    }
     private val opencodeStatusLabel = JBLabel(" ")
 
     // Codex fields
     private val codexCommandField = JBTextField().apply { columns = 32 }
-    private val codexExtraArgsField = JBTextField().apply { columns = 32 }
-
-    // Model is a dropdown so users can pick a known Codex model instead of
-    // typing a raw id; still editable so unusual / new model ids are accepted.
-    private val codexModelCombo =
-        JComboBox(CODEX_MODELS).apply {
-            isEditable = true
-        }
-    private val codexApprovalCombo = JComboBox(CODEX_APPROVAL_POLICIES)
-    private val codexSandboxCombo = JComboBox(CODEX_SANDBOXES)
-    private val codexReasoningEffortCombo = JComboBox(CODEX_REASONING_EFFORTS)
     private val codexThinkingCombo = JComboBox(CODEX_THINKING_MODES)
     private val codexStatusLabel = JBLabel(" ")
 
@@ -333,14 +288,6 @@ class SweepChatProviderConfigurable(
         opencodePanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         opencodePanel.add(labeledRowWithButtons("Executable:", opencodeCommandField, OPENCODE_ID))
         opencodePanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        opencodePanel.add(labeledRow("Extra args:", opencodeExtraArgsField))
-        opencodePanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        opencodePanel.add(labeledRow("Base URL:", opencodeBaseUrlField))
-        opencodePanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        opencodePanel.add(labeledRow("Agent profile:", opencodeAgentCombo))
-        opencodePanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        opencodePanel.add(labeledRow("Model:", opencodeModelField))
-        opencodePanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         opencodePanel.add(labeledRow("Status:", opencodeStatusLabel))
     }
 
@@ -351,16 +298,6 @@ class SweepChatProviderConfigurable(
         codexPanel.add(JBLabel("Codex"))
         codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         codexPanel.add(labeledRowWithButtons("Executable:", codexCommandField, CODEX_ID))
-        codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        codexPanel.add(labeledRow("Extra args:", codexExtraArgsField))
-        codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        codexPanel.add(labeledRow("Model:", codexModelCombo))
-        codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        codexPanel.add(labeledRow("Approval:", codexApprovalCombo))
-        codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        codexPanel.add(labeledRow("Sandbox:", codexSandboxCombo))
-        codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        codexPanel.add(labeledRow("Reasoning effort:", codexReasoningEffortCombo))
         codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         codexPanel.add(labeledRow("Thinking:", codexThinkingCombo))
         codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
@@ -484,23 +421,11 @@ class SweepChatProviderConfigurable(
         private const val TEST_CONNECTION_TIMEOUT_MS: Long = 45_000L
     }
 
-    private fun codexModelValue(): String =
-        (codexModelCombo.editor?.item?.toString() ?: (codexModelCombo.selectedItem as? String).orEmpty()).trim()
-
     override fun isModified(): Boolean {
         val selected = (providerCombo.selectedItem as ProviderChoice).id
         return selected != config.getChatProviderId() ||
             opencodeCommandField.text.trim() != config.getOpencodeCommand() ||
-            opencodeExtraArgsField.text != config.getOpencodeExtraArgs() ||
-            opencodeBaseUrlField.text.trim() != config.getOpencodeBaseUrl() ||
-            (opencodeAgentCombo.selectedItem as String) != config.getOpencodeAgent() ||
-            opencodeModelField.text.trim() != config.getOpencodeModel() ||
             codexCommandField.text.trim() != config.getCodexCommand() ||
-            codexExtraArgsField.text != config.getCodexExtraArgs() ||
-            codexModelValue() != config.getCodexModel() ||
-            (codexApprovalCombo.selectedItem as String) != config.getCodexApprovalPolicy() ||
-            (codexSandboxCombo.selectedItem as String) != config.getCodexSandbox() ||
-            (codexReasoningEffortCombo.selectedItem as String) != config.getCodexReasoningEffort() ||
             (codexThinkingCombo.selectedItem as String) != config.getCodexThinking() ||
             nodePathField.text.trim() != config.getAiBridgeNodePath() ||
             codexSdkVersionField.text.trim() != config.getCodexSdkVersion() ||
@@ -511,16 +436,7 @@ class SweepChatProviderConfigurable(
         val selected = (providerCombo.selectedItem as ProviderChoice).id
         config.updateChatProviderId(selected)
         config.updateOpencodeCommand(opencodeCommandField.text.trim())
-        config.updateOpencodeExtraArgs(opencodeExtraArgsField.text)
-        config.updateOpencodeBaseUrl(opencodeBaseUrlField.text.trim())
-        config.updateOpencodeAgent(opencodeAgentCombo.selectedItem as String)
-        config.updateOpencodeModel(opencodeModelField.text.trim())
         config.updateCodexCommand(codexCommandField.text.trim())
-        config.updateCodexExtraArgs(codexExtraArgsField.text)
-        config.updateCodexModel(codexModelValue())
-        config.updateCodexApprovalPolicy(codexApprovalCombo.selectedItem as String)
-        config.updateCodexSandbox(codexSandboxCombo.selectedItem as String)
-        config.updateCodexReasoningEffort(codexReasoningEffortCombo.selectedItem as String)
         config.updateCodexThinking(codexThinkingCombo.selectedItem as String)
         config.updateAiBridgeNodePath(nodePathField.text.trim())
         config.updateCodexSdkVersion(codexSdkVersionField.text.trim().ifBlank { "latest" })
@@ -532,20 +448,7 @@ class SweepChatProviderConfigurable(
         providerCombo.selectedItem =
             PROVIDER_CHOICES.firstOrNull { it.id == current } ?: PROVIDER_CHOICES.first()
         opencodeCommandField.text = config.getOpencodeCommand()
-        opencodeExtraArgsField.text = config.getOpencodeExtraArgs()
-        opencodeBaseUrlField.text = config.getOpencodeBaseUrl()
-        opencodeAgentCombo.selectedItem = config.getOpencodeAgent().takeIf { it in OPENCODE_AGENTS } ?: "build"
-        opencodeModelField.text = config.getOpencodeModel()
         codexCommandField.text = config.getCodexCommand()
-        codexExtraArgsField.text = config.getCodexExtraArgs()
-        val storedModel = config.getCodexModel()
-        codexModelCombo.selectedItem = if (storedModel in CODEX_MODELS) storedModel else storedModel
-        codexApprovalCombo.selectedItem =
-            config.getCodexApprovalPolicy().takeIf { it in CODEX_APPROVAL_POLICIES } ?: "on-request"
-        codexSandboxCombo.selectedItem =
-            config.getCodexSandbox().takeIf { it in CODEX_SANDBOXES } ?: "workspace-write"
-        codexReasoningEffortCombo.selectedItem =
-            config.getCodexReasoningEffort().takeIf { it in CODEX_REASONING_EFFORTS } ?: ""
         codexThinkingCombo.selectedItem =
             config.getCodexThinking().takeIf { it in CODEX_THINKING_MODES } ?: ""
         nodePathField.text = config.getAiBridgeNodePath()

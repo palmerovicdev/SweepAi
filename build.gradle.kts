@@ -18,7 +18,7 @@ val pluginId = "dev.sweep.assistant"
 val pluginName = "Sweep Self-Hosted"
 println("Building plugin: $pluginName with ID: $pluginId")
 group = "dev.sweep"
-version = "1.30.1"
+version = "1.30.2"
 
 intellijPlatform {
     autoReload.set(false) // this triggers unloading which is very annoying

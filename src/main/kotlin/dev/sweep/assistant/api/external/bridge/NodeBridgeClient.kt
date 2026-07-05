@@ -16,6 +16,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -151,6 +154,35 @@ class NodeBridgeClient : Disposable {
             }
         }
         return last ?: JsonObject(emptyMap())
+    }
+
+    /** Returns the models exposed by the running OpenCode server. */
+    suspend fun listOpencodeModels(cwd: String): List<OpencodeModel> {
+        var models = emptyList<OpencodeModel>()
+        val params = buildJsonObject { put("cwd", cwd) }
+        call("opencode.listModels", params).collect { payload ->
+            if (payload.eventName != "models") return@collect
+            val data = payload.data as? JsonObject ?: return@collect
+            models =
+                data["models"]
+                    ?.jsonArray
+                    ?.mapNotNull { item ->
+                        val value = item.jsonObject
+                        val providerId = value["providerId"]?.jsonPrimitive?.content.orEmpty()
+                        val modelId = value["modelId"]?.jsonPrimitive?.content.orEmpty()
+                        if (providerId.isBlank() || modelId.isBlank()) {
+                            null
+                        } else {
+                            OpencodeModel(
+                                providerId = providerId,
+                                providerName = value["providerName"]?.jsonPrimitive?.content ?: providerId,
+                                modelId = modelId,
+                                name = value["name"]?.jsonPrimitive?.content ?: modelId,
+                            )
+                        }
+                    }.orEmpty()
+        }
+        return models
     }
 
     // ============================================================================================
@@ -311,6 +343,15 @@ class NodeBridgeClient : Disposable {
         fun getInstance(): NodeBridgeClient =
             ApplicationManager.getApplication().getService(NodeBridgeClient::class.java)
     }
+}
+
+data class OpencodeModel(
+    val providerId: String,
+    val providerName: String,
+    val modelId: String,
+    val name: String,
+) {
+    val id: String = "$providerId/$modelId"
 }
 
 /** Terminal / transport error surfaced by [NodeBridgeClient.call]. */

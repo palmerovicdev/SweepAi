@@ -218,8 +218,8 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
     var autocompleteMlxModelRevision: String = ""
 
     // ===== External Agent Chat =====
-    // "sweep-cloud" (default), "local", "opencode", "codex"
-    var chatProviderId: String = "sweep-cloud"
+    // "local" (default), "opencode", "codex"
+    var chatProviderId: String = "local"
         set(value) {
             if (value != field) {
                 field = value
@@ -445,12 +445,15 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
      * Determines if the user has configured Sweep settings if either:
      * 1. Both GitHub token and base URL have been set to non-default values, OR
      * 2. An Anthropic API key has been provided, OR
-     * 3. An external chat provider (OpenCode / Codex) is selected AND its
+     * 3. The local-model provider is selected — it runs entirely on-device
+     *    and needs no cloud credentials to enter the chat UI, OR
+     * 4. An external chat provider (OpenCode / Codex) is selected AND its
      *    SDKs have actually been installed — merely picking the provider is
      *    not enough, because the bridge would still fail on first send.
      */
     val hasBeenSet: Boolean
         get() {
+            if (chatProviderId == "local") return true
             if (chatProviderId in setOf("opencode", "codex") && bridgeSdksInstalled) return true
             return if (SweepSettingsParser.isCloudEnvironment()) {
                 githubToken != DEFAULT_GITHUB_TOKEN
@@ -491,6 +494,9 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
 
     override fun loadState(state: SweepSettings) {
         XmlSerializerUtil.copyBean(state, this)
+        if (chatProviderId == "sweep-cloud") {
+            chatProviderId = "local"
+        }
         // Initialize default prompts after loading state
         ensureDefaultPromptsInitialized()
         // One-time migration for users upgrading from a version where

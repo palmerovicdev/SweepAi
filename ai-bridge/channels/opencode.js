@@ -16,6 +16,7 @@ const inflight = new Map();
 
 export async function handleOpencode({ id, method, params, write }) {
   switch (method) {
+    case 'listModels':      return listModels({ id, params, write });
     case 'createSession':   return createSession({ id, params, write });
     case 'resumeSession':   return resumeSession({ id, params, write });
     case 'send':            return send({ id, params, write });
@@ -24,6 +25,44 @@ export async function handleOpencode({ id, method, params, write }) {
     default:
       write({ error: { code: -32601, message: `Unknown opencode method: ${method}` } });
       write({ done: true });
+  }
+}
+
+async function listModels({ params, write }) {
+  try {
+    const { client } = await ensureClient();
+    const options = params?.cwd ? { query: { directory: params.cwd } } : undefined;
+    const response = client.provider?.list
+      ? await client.provider.list(options)
+      : await client.config.providers(options);
+    const data = response?.data ?? response ?? {};
+    const providers = data.all ?? data.providers ?? [];
+    const connected = Array.isArray(data.connected) ? new Set(data.connected) : null;
+    const models = [];
+
+    for (const provider of providers) {
+      if (connected && !connected.has(provider.id)) continue;
+      for (const [key, model] of Object.entries(provider.models ?? {})) {
+        const modelID = model?.id ?? key;
+        if (!provider.id || !modelID) continue;
+        models.push({
+          providerId: provider.id,
+          providerName: provider.name ?? provider.id,
+          modelId: modelID,
+          name: model?.name ?? modelID,
+        });
+      }
+    }
+
+    models.sort((a, b) =>
+      a.providerName.localeCompare(b.providerName)
+      || a.name.localeCompare(b.name)
+      || a.modelId.localeCompare(b.modelId));
+    write({ event: 'models', data: { models } });
+    write({ done: true });
+  } catch (e) {
+    write({ error: { message: `opencode.listModels failed: ${e && e.message ? e.message : e}` } });
+    write({ done: true });
   }
 }
 

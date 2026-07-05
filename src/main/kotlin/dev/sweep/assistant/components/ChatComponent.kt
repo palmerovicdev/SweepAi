@@ -79,6 +79,7 @@ class ChatComponent(
     private var externalAgentQuickSettings: dev.sweep.assistant.views.ExternalAgentQuickSettings? = null
     private var agentProviderModePicker: dev.sweep.assistant.views.AgentProviderModePicker? = null
     private var reasoningEffortPickerMenu: dev.sweep.assistant.views.ReasoningEffortPickerMenu? = null
+    private var opencodeModelPicker: dev.sweep.assistant.views.OpencodeModelPicker? = null
 
     private var textFieldKeyListener: KeyPressedAdapter? = null
     private var textFieldDocumentListener: javax.swing.event.DocumentListener? = null
@@ -507,6 +508,8 @@ class ChatComponent(
                                                 dev.sweep.assistant.views.AgentProviderModePicker(project, this@ChatComponent)
                                             reasoningEffortPickerMenu =
                                                 dev.sweep.assistant.views.ReasoningEffortPickerMenu(project, this@ChatComponent)
+                                            opencodeModelPicker =
+                                                dev.sweep.assistant.views.OpencodeModelPicker(project, this@ChatComponent)
 
                                             project.messageBus.connect(this@ChatComponent).subscribe(
                                                 dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier.TOPIC,
@@ -523,6 +526,7 @@ class ChatComponent(
                                                         externalAgentQuickSettings?.refresh()
                                                         agentProviderModePicker?.refresh()
                                                         reasoningEffortPickerMenu?.refresh()
+                                                        opencodeModelPicker?.refresh()
                                                     }
                                                 },
                                             )
@@ -541,6 +545,7 @@ class ChatComponent(
                                                     add(modeToggle)
                                                     agentProviderModePicker?.let { add(it) }
                                                     add(modelPickerContainer)
+                                                    opencodeModelPicker?.let { add(it) }
                                                     reasoningEffortPickerMenu?.let { add(it) }
                                                     externalAgentQuickSettings?.let { add(it) }
                                                 }

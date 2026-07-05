@@ -31,6 +31,7 @@
   </li>
   <li><b>Bug Fixes and Improvements</b>
     <ul>
+        <li>The redundant gear "Settings" button in the chat tool-window title bar was removed — use <b>Preferences → Sweep</b> (or the <code>SweepSettings</code> action) instead. Keybindings continue to work.</li>
         <li>"Test Connection" for Codex and OpenCode no longer hangs indefinitely; it enforces per-step and overall timeouts and always reports back.</li>
         <li>Node.js executable can be pinned in Settings when the default PATH detection misses (nvm / volta / fnm / asdf are also probed).</li>
     </ul>
@@ -81,6 +82,16 @@
                 displayName="Chat Provider"
                 id="dev.sweep.assistant.settings.SweepChatProviderConfigurable"
                 instance="dev.sweep.assistant.settings.SweepChatProviderConfigurable"/>
+        <projectConfigurable
+                parentId="dev.sweep.assistant.settings.SweepSettingsConfigurable"
+                displayName="BYOK"
+                id="dev.sweep.assistant.settings.SweepByokConfigurable"
+                instance="dev.sweep.assistant.settings.SweepByokConfigurable"/>
+        <projectConfigurable
+                parentId="dev.sweep.assistant.settings.SweepSettingsConfigurable"
+                displayName="Custom Prompts"
+                id="dev.sweep.assistant.settings.SweepCustomPromptsConfigurable"
+                instance="dev.sweep.assistant.settings.SweepCustomPromptsConfigurable"/>
         <editorNotificationProvider implementation="dev.sweep.assistant.notifications.AutocompleteExclusionNotificationProvider"/>
         <statusBarWidgetFactory id="SweepAutocompleteStatus"
                                 implementation="dev.sweep.assistant.statusbar.AutocompleteStatusBarWidgetFactory"/>
@@ -116,11 +127,20 @@
         </action>
         <action id="dev.sweep.assistant.actions.TerminalAddToChatAction"
                 class="dev.sweep.assistant.actions.TerminalAddToChatAction"
-                text="Add to Sweep"
-                description="Add the selected terminal text to the Sweep chat">
-            <add-to-group group-id="Terminal.ReworkedTerminalContextMenu" anchor="after" relative-to-action="Terminal.CopySelectedText"/>
-            <add-to-group group-id="Terminal.OutputContextMenu" anchor="after" relative-to-action="Terminal.CopySelectedText"/>
+                text="Add to Sweep Chat"
+                description="Add the selected terminal text to the Sweep chat"
+                icon="/icons/sweep.svg">
+            <add-to-group group-id="Terminal.OutputContextMenu" anchor="last"/>
+            <add-to-group group-id="Terminal.PromptContextMenu" anchor="last"/>
+            <add-to-group group-id="Terminal.ReworkedTerminalContextMenu" anchor="last"/>
         </action>
+        <group id="dev.sweep.assistant.controllers.RightClickAction"
+               class="dev.sweep.assistant.actions.SweepActionsGroup"
+               text="Sweep Agent Right Click Actions"
+               popup="true">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <add-to-group group-id="Floating.CodeToolbar" anchor="first"/>
+        </group>
     </actions>
     <resource-bundle>messages.sweep</resource-bundle>
 </idea-plugin>

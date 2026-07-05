@@ -4,12 +4,13 @@ import com.intellij.notification.NotificationAction
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.util.IconLoader
 import dev.sweep.assistant.components.ChatComponent
-import dev.sweep.assistant.components.SweepConfig
+import dev.sweep.assistant.settings.SweepCustomPromptsConfigurable
 import dev.sweep.assistant.settings.SweepMetaData
 import dev.sweep.assistant.settings.SweepSettings
 import dev.sweep.assistant.tracking.EventType
@@ -122,7 +123,10 @@ class ReviewPRAction : AnAction() {
                                             e: AnActionEvent,
                                             notification: com.intellij.notification.Notification,
                                         ) {
-                                            SweepConfig.getInstance(project).showConfigPopup("Custom Prompts")
+                                            ShowSettingsUtil.getInstance().showSettingsDialog(
+                                                project,
+                                                SweepCustomPromptsConfigurable::class.java,
+                                            )
                                             notification.expire()
                                         }
                                     },

@@ -9,6 +9,7 @@ import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileEditorManagerListener
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -218,7 +219,10 @@ class Sweep :
                 SweepActionManager.getInstance(project).openSettingsAction =
                     object : AnAction("Sweep Settings", "Configure Sweep", SweepIcons.SweepIcon.scale(16f)) {
                         override fun actionPerformed(e: AnActionEvent) {
-                            SweepConfig.getInstance(project).showConfigPopup()
+                            ShowSettingsUtil.getInstance().showSettingsDialog(
+                                project,
+                                dev.sweep.assistant.settings.SweepSettingsConfigurable::class.java,
+                            )
                         }
                     }
 

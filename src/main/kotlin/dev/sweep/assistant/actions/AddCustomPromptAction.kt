@@ -1,9 +1,10 @@
 package dev.sweep.assistant.actions
 
 import com.intellij.openapi.actionSystem.*
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.wm.ToolWindowManager
-import dev.sweep.assistant.components.SweepConfig
+import dev.sweep.assistant.settings.SweepCustomPromptsConfigurable
 import dev.sweep.assistant.utils.SweepConstants
 
 /**
@@ -19,8 +20,8 @@ class AddCustomPromptAction : AnAction() {
         // Show the tool window first
         ToolWindowManager.getInstance(project).getToolWindow(SweepConstants.TOOLWINDOW_NAME)?.show()
 
-        // Open the config popup to the Custom Prompts tab
-        SweepConfig.getInstance(project).showConfigPopup("Custom Prompts")
+        // Open Preferences directly at the Custom Prompts sub-node.
+        ShowSettingsUtil.getInstance().showSettingsDialog(project, SweepCustomPromptsConfigurable::class.java)
     }
 
     override fun update(e: AnActionEvent) {

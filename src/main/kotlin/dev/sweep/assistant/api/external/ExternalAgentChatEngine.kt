@@ -487,11 +487,15 @@ class ExternalAgentChatEngine(
 
         ApplicationManager.getApplication().invokeLater {
             if (project.isDisposed) return@invokeLater
-            NotificationGroupManager
+            val notificationGroup =
+                NotificationGroupManager
                 .getInstance()
-                .getNotificationGroup("Error Notifications")
-                .createNotification(title, message, notificationType)
-                .notify(project)
+                    .getNotificationGroup(NOTIFICATION_GROUP_ID)
+            if (notificationGroup == null) {
+                logger.warn("Notification group '$NOTIFICATION_GROUP_ID' is not registered")
+                return@invokeLater
+            }
+            notificationGroup.createNotification(title, message, notificationType).notify(project)
         }
     }
 
@@ -522,6 +526,8 @@ class ExternalAgentChatEngine(
     )
 
     companion object {
+        private const val NOTIFICATION_GROUP_ID = "Sweep AI Notifications"
+
         fun getInstance(project: Project): ExternalAgentChatEngine =
             project.getService(ExternalAgentChatEngine::class.java)
     }

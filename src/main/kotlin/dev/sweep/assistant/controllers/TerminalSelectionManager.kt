@@ -123,6 +123,14 @@ class TerminalManagerService(
             // Register with SweepProjectService after initialization to avoid circular dependency
             Disposer.register(SweepProjectService.getInstance(project), this)
 
+            runCatching {
+                if (TerminalSelectionUtils.registerForReworkedTerminalContextMenu()) {
+                    logger.info("[TerminalAddToChat] Registered action into Terminal.ReworkedTerminalContextMenu")
+                }
+            }.onFailure {
+                logger.debug("[TerminalAddToChat] Failed to register reworked terminal context menu action", it)
+            }
+
             KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(keyEventDispatcher)
 
             val terminalToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Terminal")
@@ -149,6 +157,7 @@ class TerminalManagerService(
     private fun attachManagerIfTerminal(component: JComponent) {
         val terminalWidget = UIUtil.findComponentOfType(component, JBTerminalWidget::class.java)
         if (terminalWidget != null && !terminalManagers.containsKey(terminalWidget)) {
+            LegacyTerminalSendActionProvider.installIfClassicTerminal(terminalWidget)
             val manager = TerminalSelectionManager(project, terminalWidget)
             terminalManagers[terminalWidget] = manager
             Disposer.register(this, manager)

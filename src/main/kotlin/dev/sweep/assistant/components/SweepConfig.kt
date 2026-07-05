@@ -1282,7 +1282,7 @@ class SweepConfig(
         }
     }
 
-    private fun createCustomPromptsPanel(): JPanel {
+    internal fun createCustomPromptsPanel(): JPanel {
         val mainPanel = JPanel(BorderLayout())
         mainPanel.border = JBUI.Borders.empty(10)
 
@@ -6321,7 +6321,7 @@ class SweepConfig(
         }
     }
 
-    private fun createBYOKPanel(): JPanel {
+    internal fun createBYOKPanel(): JPanel {
         val mainPanel = JPanel(GridBagLayout())
         mainPanel.border = JBUI.Borders.empty()
 

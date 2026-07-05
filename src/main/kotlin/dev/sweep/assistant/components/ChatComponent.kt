@@ -76,6 +76,7 @@ class ChatComponent(
     private var agentProviderModePicker: dev.sweep.assistant.views.AgentProviderModePicker? = null
     private var reasoningEffortPickerMenu: dev.sweep.assistant.views.ReasoningEffortPickerMenu? = null
     private var opencodeModelPicker: dev.sweep.assistant.views.OpencodeModelPicker? = null
+    private var codexModelPicker: dev.sweep.assistant.views.CodexModelPicker? = null
 
     private var textFieldKeyListener: KeyPressedAdapter? = null
     private var textFieldDocumentListener: javax.swing.event.DocumentListener? = null
@@ -473,6 +474,11 @@ class ChatComponent(
                                                     project,
                                                     this@ChatComponent
                                                 )
+                                            codexModelPicker =
+                                                dev.sweep.assistant.views.CodexModelPicker(
+                                                    project,
+                                                    this@ChatComponent
+                                                )
 
                                             project.messageBus.connect(this@ChatComponent).subscribe(
                                                 dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier.TOPIC,
@@ -482,6 +488,7 @@ class ChatComponent(
                                                         agentProviderModePicker?.refresh()
                                                         reasoningEffortPickerMenu?.refresh()
                                                         opencodeModelPicker?.refresh()
+                                                        codexModelPicker?.refresh()
                                                     }
                                                 },
                                             )
@@ -493,8 +500,9 @@ class ChatComponent(
                                                     border = JBUI.Borders.empty() // Remove any default padding
                                                     isOpaque = true // Ensure opacity is consistent
                                                     agentProviderModePicker?.let { add(it) }
-                                                    opencodeModelPicker?.let { add(it) }
                                                     reasoningEffortPickerMenu?.let { add(it) }
+                                                    opencodeModelPicker?.let { add(it) }
+                                                    codexModelPicker?.let { add(it) }
                                                     externalAgentQuickSettings?.let { add(it) }
                                                 }
                                             add(leftContainer, BorderLayout.WEST)

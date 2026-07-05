@@ -12,8 +12,11 @@ import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.changes.*
 import com.intellij.openapi.vcs.ui.CommitMessage
 import com.intellij.serviceContainer.AlreadyDisposedException
+import dev.sweep.assistant.api.external.bridge.BridgeException
+import dev.sweep.assistant.api.external.bridge.NodeBridgeClient
 import dev.sweep.assistant.components.SweepConfig
 import dev.sweep.assistant.data.CommitMessageRequest
+import dev.sweep.assistant.settings.SweepSettings
 import dev.sweep.assistant.utils.PartialChangeInfo
 import dev.sweep.assistant.utils.generateCombinedDiffString
 import dev.sweep.assistant.utils.generateDiffStringFromChanges
@@ -22,6 +25,9 @@ import dev.sweep.assistant.utils.getConnection
 import dev.sweep.assistant.utils.getCurrentBranchName
 import dev.sweep.assistant.utils.getRecentCommitMessages
 import dev.sweep.assistant.utils.showNotification
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
 import java.time.Instant
@@ -167,6 +173,24 @@ class SweepCommitMessageService(
                 null
             }
 
+        val providerId = SweepSettings.getInstance().chatProviderId
+        val raw =
+            when (providerId) {
+                "codex", "opencode" ->
+                    generateViaBridge(providerId, diffString, previousCommitsString, commitTemplate, currentBranch)
+                else ->
+                    generateViaBackend(diffString, previousCommitsString, commitTemplate, currentBranch)
+            }
+
+        return stripBoilerplate(raw)
+    }
+
+    private fun generateViaBackend(
+        diffString: String,
+        previousCommitsString: String,
+        commitTemplate: String?,
+        currentBranch: String?,
+    ): String {
         var commitMessage = ""
         try {
             var connection: HttpURLConnection? = null
@@ -203,7 +227,101 @@ class SweepCommitMessageService(
             logger.warn("Failed to generate commit message", e)
         }
 
-        return commitMessage.trim()
+        return commitMessage
+    }
+
+    private fun generateViaBridge(
+        providerId: String,
+        diffString: String,
+        previousCommitsString: String,
+        commitTemplate: String?,
+        currentBranch: String?,
+    ): String {
+        val cwd = project.basePath ?: return ""
+        val prompt = buildExternalCommitPrompt(diffString, previousCommitsString, commitTemplate, currentBranch)
+        return try {
+            runBlocking {
+                withTimeout(BRIDGE_TIMEOUT_MS) {
+                    NodeBridgeClient.getInstance().oneShotCompletion(providerId, cwd, prompt)
+                }
+            }
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: TimeoutCancellationException) {
+            logger.warn("Commit message generation timed out via $providerId bridge", e)
+            showNotification(
+                project = project,
+                title = "Commit message generation timed out",
+                body = "Sweep did not receive a response from $providerId within 60s.",
+                notificationGroup = "Sweep Commit Messages",
+            )
+            ""
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: BridgeException) {
+            logger.warn("Bridge failed while generating commit message via $providerId", e)
+            showNotification(
+                project = project,
+                title = "Commit message generation failed",
+                body = e.message ?: "The $providerId sidecar returned an error.",
+                notificationGroup = "Sweep Commit Messages",
+            )
+            ""
+        } catch (e: Exception) {
+            logger.warn("Failed to generate commit message via $providerId bridge", e)
+            ""
+        }
+    }
+
+    private fun buildExternalCommitPrompt(
+        diff: String,
+        previousCommits: String,
+        commitTemplate: String?,
+        branch: String?,
+    ): String = buildString {
+        appendLine("You are generating a Git commit message for the staged changes below.")
+        appendLine("Return ONLY the commit message text. No code fences, no preamble, no trailing explanation.")
+        appendLine()
+        if (!commitTemplate.isNullOrBlank()) {
+            appendLine("## Commit Message Template / Rules")
+            appendLine(commitTemplate.trim())
+            appendLine()
+        }
+        if (previousCommits.isNotBlank()) {
+            appendLine("## Repository Style — Recent Commit Messages")
+            appendLine("Match the tone, structure, and prefix conventions shown below.")
+            appendLine(previousCommits.trim())
+            appendLine()
+        }
+        if (!branch.isNullOrBlank()) {
+            appendLine("## Current Branch")
+            appendLine(branch)
+            appendLine()
+        }
+        appendLine("## Diff")
+        appendLine("```diff")
+        appendLine(diff.take(DIFF_HARD_LIMIT))
+        appendLine("```")
+    }
+
+    private fun stripBoilerplate(raw: String): String {
+        var s = raw.trim()
+        if (s.startsWith("```")) {
+            val nl = s.indexOf('\n')
+            if (nl >= 0) s = s.substring(nl + 1)
+        }
+        if (s.endsWith("```")) {
+            s = s.substring(0, s.length - 3)
+        }
+        s = s.trim()
+        val lowered = s.lowercase()
+        for (prefix in COMMIT_LABEL_PREFIXES) {
+            if (lowered.startsWith(prefix)) {
+                s = s.substring(prefix.length).trim()
+                break
+            }
+        }
+        return s
     }
 
     companion object {
@@ -211,6 +329,10 @@ class SweepCommitMessageService(
 
         // min time between git commit message updates
         private const val UPDATE_COOLDOWN_MS = 5 * 60 * 1000
+
+        private const val BRIDGE_TIMEOUT_MS = 60_000L
+        private const val DIFF_HARD_LIMIT = 200_000
+        private val COMMIT_LABEL_PREFIXES = listOf("commit-message:", "commit message:", "message:")
 
         fun getInstance(project: Project): SweepCommitMessageService = project.getService(SweepCommitMessageService::class.java)
     }

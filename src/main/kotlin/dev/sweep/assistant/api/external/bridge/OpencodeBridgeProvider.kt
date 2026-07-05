@@ -41,7 +41,7 @@ class OpencodeBridgeProvider : ExternalAgentProvider {
 
     override suspend fun ensureRunning(project: Project, settings: SweepSettings): ProviderHandle {
         NodeBridgeClient.getInstance().warmStart()
-        return ProviderHandle(Unit)
+        return ProviderHandle(project.basePath.orEmpty())
     }
 
     override suspend fun close(handle: ProviderHandle) {
@@ -65,7 +65,10 @@ class OpencodeBridgeProvider : ExternalAgentProvider {
     }
 
     override suspend fun resumeSession(handle: ProviderHandle, remoteSessionId: String): ResumeResult {
-        val params = buildJsonObject { put("sessionId", remoteSessionId) }
+        val params = buildJsonObject {
+            put("sessionId", remoteSessionId)
+            handle.cwdOrNull()?.let { put("cwd", it) }
+        }
         return try {
             var restored: String? = null
             NodeBridgeClient.getInstance().call("opencode.resumeSession", params).collect { payload ->
@@ -75,7 +78,7 @@ class OpencodeBridgeProvider : ExternalAgentProvider {
                     } ?: remoteSessionId
                 }
             }
-            if (restored != null) ResumeResult.Ok(restored!!) else ResumeResult.NotFound
+            restored?.let(ResumeResult::Ok) ?: ResumeResult.NotFound
         } catch (e: BridgeException) {
             if (e.code == -32602 || (e.message ?: "").contains("not found", ignoreCase = true)) {
                 ResumeResult.NotFound
@@ -96,6 +99,7 @@ class OpencodeBridgeProvider : ExternalAgentProvider {
             put("sessionId", remoteSessionId)
             put("prompt", prompt)
             put("agent", settings.opencodeAgent)
+            handle.cwdOrNull()?.let { put("cwd", it) }
             // OpenCode uses `providerID/modelID`; empty = server default.
             if (settings.opencodeModel.isNotBlank()) put("model", settings.opencodeModel)
         }
@@ -106,7 +110,10 @@ class OpencodeBridgeProvider : ExternalAgentProvider {
 
     override suspend fun cancelCurrentTurn(handle: ProviderHandle, remoteSessionId: String) {
         try {
-            val params = buildJsonObject { put("sessionId", remoteSessionId) }
+            val params = buildJsonObject {
+                put("sessionId", remoteSessionId)
+                handle.cwdOrNull()?.let { put("cwd", it) }
+            }
             NodeBridgeClient.getInstance().call("opencode.cancel", params).collect { /* drain */ }
         } catch (e: BridgeException) {
             logger.warn("opencode.cancel failed for $remoteSessionId: ${e.message}")
@@ -124,6 +131,7 @@ class OpencodeBridgeProvider : ExternalAgentProvider {
                 put("sessionId", remoteSessionId)
                 put("permissionId", permissionId)
                 put("allow", allow)
+                handle.cwdOrNull()?.let { put("cwd", it) }
             }
             NodeBridgeClient.getInstance().call("opencode.answerPermission", params).collect { /* drain */ }
         } catch (e: BridgeException) {
@@ -141,4 +149,7 @@ class OpencodeBridgeProvider : ExternalAgentProvider {
     } catch (e: Throwable) {
         TestResult.Fail(e.message ?: e.javaClass.simpleName)
     }
+
+    private fun ProviderHandle.cwdOrNull(): String? =
+        (opaque as? String)?.takeIf { it.isNotBlank() }
 }

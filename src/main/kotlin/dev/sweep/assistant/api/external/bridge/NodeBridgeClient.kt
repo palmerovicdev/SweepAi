@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -154,6 +155,102 @@ class NodeBridgeClient : Disposable {
             }
         }
         return last ?: JsonObject(emptyMap())
+    }
+
+    /**
+     * Drives the sidecar for a single non-conversational completion using an
+     * external provider (`codex` or `opencode`). Mints a fresh session/thread,
+     * sends the prompt, concatenates every `text.delta` payload whose
+     * `kind == "content"` (thinking output is dropped), and returns the string
+     * once the daemon signals `turn.done`.
+     *
+     * Reused by the commit-message flow so it can honor the same provider+model
+     * the user has active in chat, without hijacking the chat session.
+     */
+    suspend fun oneShotCompletion(
+        providerId: String,
+        cwd: String,
+        prompt: String,
+    ): String {
+        val settings = SweepSettings.getInstance()
+        return when (providerId) {
+            "opencode" -> {
+                val createParams = buildJsonObject {
+                    put("cwd", cwd)
+                    if (settings.opencodeAgent.isNotBlank()) put("agent", settings.opencodeAgent)
+                }
+                var sessionId: String? = null
+                call("opencode.createSession", createParams).collect { payload ->
+                    if (payload.eventName == "session.created") {
+                        sessionId = (payload.data as? JsonObject)
+                            ?.get("sessionId")
+                            ?.let { (it as? JsonPrimitive)?.contentOrNull }
+                            ?: sessionId
+                    }
+                }
+                val sid = sessionId
+                    ?: throw BridgeException("opencode.createSession returned no sessionId")
+
+                val sendParams = buildJsonObject {
+                    put("sessionId", sid)
+                    put("prompt", prompt)
+                    put("cwd", cwd)
+                    if (settings.opencodeAgent.isNotBlank()) put("agent", settings.opencodeAgent)
+                    if (settings.opencodeModel.isNotBlank()) put("model", settings.opencodeModel)
+                }
+                collectContentDeltas("opencode.send", sendParams)
+            }
+
+            "codex" -> {
+                val startParams = buildJsonObject {
+                    put("cwd", cwd)
+                    if (settings.codexModel.isNotBlank()) put("model", settings.codexModel)
+                    if (settings.codexApprovalPolicy.isNotBlank()) put("approvalPolicy", settings.codexApprovalPolicy)
+                    if (settings.codexSandbox.isNotBlank()) put("sandbox", settings.codexSandbox)
+                    if (settings.codexReasoningEffort.isNotBlank()) put("reasoningEffort", settings.codexReasoningEffort)
+                    put("skipGitRepoCheck", true)
+                }
+                var threadId: String? = null
+                call("codex.startThread", startParams).collect { payload ->
+                    if (payload.eventName == "thread.created" || payload.eventName == "thread.started") {
+                        threadId = (payload.data as? JsonObject)
+                            ?.get("threadId")
+                            ?.let { (it as? JsonPrimitive)?.contentOrNull }
+                            ?: threadId
+                    }
+                }
+                val tid = threadId
+                    ?: throw BridgeException("codex.startThread returned no threadId")
+
+                val sendParams = buildJsonObject {
+                    put("threadId", tid)
+                    put("prompt", prompt)
+                    put("model", settings.codexModel)
+                    put("approvalPolicy", settings.codexApprovalPolicy)
+                    put("sandbox", settings.codexSandbox)
+                    put("reasoningEffort", settings.codexReasoningEffort)
+                    put("thinking", settings.codexThinking)
+                }
+                collectContentDeltas("codex.send", sendParams)
+            }
+
+            else -> throw IllegalArgumentException(
+                "Unknown providerId for oneShotCompletion: $providerId (expected 'codex' or 'opencode')",
+            )
+        }
+    }
+
+    private suspend fun collectContentDeltas(method: String, params: JsonObject): String {
+        val sb = StringBuilder()
+        call(method, params).collect { payload ->
+            if (payload.eventName != "text.delta") return@collect
+            val data = payload.data as? JsonObject ?: return@collect
+            val kind = (data["kind"] as? JsonPrimitive)?.contentOrNull
+            if (kind == "thinking") return@collect
+            val delta = (data["delta"] as? JsonPrimitive)?.contentOrNull ?: return@collect
+            sb.append(delta)
+        }
+        return sb.toString()
     }
 
     /** Returns the models exposed by the running OpenCode server. */

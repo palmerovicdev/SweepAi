@@ -114,6 +114,13 @@
                 description="Generate a commit message with Sweep">
             <add-to-group group-id="Vcs.MessageActionGroup" anchor="last"/>
         </action>
+        <action id="dev.sweep.assistant.actions.TerminalAddToChatAction"
+                class="dev.sweep.assistant.actions.TerminalAddToChatAction"
+                text="Add to Sweep"
+                description="Add the selected terminal text to the Sweep chat">
+            <add-to-group group-id="Terminal.ReworkedTerminalContextMenu" anchor="after" relative-to-action="Terminal.CopySelectedText"/>
+            <add-to-group group-id="Terminal.OutputContextMenu" anchor="after" relative-to-action="Terminal.CopySelectedText"/>
+        </action>
     </actions>
     <resource-bundle>messages.sweep</resource-bundle>
 </idea-plugin>

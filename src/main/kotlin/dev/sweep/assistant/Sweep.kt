@@ -215,17 +215,6 @@ class Sweep :
                         }
                     }
 
-                SweepActionManager.getInstance(project).settingsAction =
-                    createCustomAction(
-                        project = project,
-                        text = if (SweepMetaData.getInstance().configButtonClicks >= 3) "" else "Settings",
-                        description = "Open Preferences",
-                        icon = AllIcons.General.Settings,
-                    ) {
-                        SweepMetaData.getInstance().configButtonClicks++
-                        SweepConfig.getInstance(project).showConfigPopup()
-                    }
-
                 SweepActionManager.getInstance(project).openSettingsAction =
                     object : AnAction("Sweep Settings", "Configure Sweep", SweepIcons.SweepIcon.scale(16f)) {
                         override fun actionPerformed(e: AnActionEvent) {
@@ -255,13 +244,11 @@ class Sweep :
                         SweepActionManager.getInstance(project).reportAction?.let { registerAction("SweepReport", it) }
                     }
                     unregisterAction("SweepSettings")
-                    SweepActionManager.getInstance(project).settingsAction?.let { registerAction("SweepSettings", it) }
                     unregisterAction("SweepOpenSettings")
-                    SweepActionManager.getInstance(project).openSettingsAction?.let {
-                        registerAction(
-                            "SweepOpenSettings",
-                            it,
-                        )
+                    SweepActionManager.getInstance(project).openSettingsAction?.let { action ->
+                        // Keep both action ids alive so pre-existing keybindings continue to work.
+                        registerAction("SweepOpenSettings", action)
+                        registerAction("SweepSettings", action)
                     }
                 }
                 toolWindow.setTitleActions(
@@ -269,7 +256,6 @@ class Sweep :
                         SweepActionManager.getInstance(project).historyAction,
                         SweepActionManager.getInstance(project).reportAction,
                         SweepActionManager.getInstance(project).newChatAction,
-                        SweepActionManager.getInstance(project).settingsAction,
                     ),
                 )
                 val connection = project.messageBus.connect(this) // myDisposable ensures cleanup

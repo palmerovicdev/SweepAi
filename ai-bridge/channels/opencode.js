@@ -13,6 +13,7 @@ const listeners = new Map();
 const seenText = new Map();
 // Per-inflight request AbortController.
 const inflight = new Map();
+const TURN_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 
 export async function handleOpencode({ id, method, params, write }) {
   switch (method) {
@@ -78,7 +79,18 @@ async function ensureClient() {
     });
     // Fan out server-side events to per-session listeners.
     fanOutEvents(client).catch((e) => {
-      process.stderr.write(`[opencode] event stream aborted: ${e && e.message ? e.message : e}\n`);
+      const message = errorMessage(e);
+      process.stderr.write(`[opencode] event stream aborted: ${message}\n`);
+      for (const [sessionID, listener] of listeners) {
+        listener({
+          type: 'session.error',
+          properties: {
+            sessionID,
+            error: { message: `OpenCode event stream aborted: ${message}` },
+          },
+        });
+      }
+      try { server.close(); } catch { /* best effort */ }
       clientPromise = null;
     });
     return { client, server };
@@ -87,10 +99,14 @@ async function ensureClient() {
 }
 
 async function fanOutEvents(client) {
-  const { stream } = await client.event();
-  for await (const event of stream) {
-    routeGlobalEvent(event);
+  // SDK 1.17 exposes the cross-project stream as `client.global.event()`.
+  // `client.event` is a project-scoped object with `subscribe()`, not a
+  // callable function. The global endpoint wraps each event in `{ payload }`.
+  const { stream } = await client.global.event();
+  for await (const envelope of stream) {
+    routeGlobalEvent(envelope?.payload ?? envelope);
   }
+  throw new Error('OpenCode event stream ended unexpectedly');
 }
 
 function routeGlobalEvent(event) {
@@ -146,7 +162,7 @@ async function resumeSession({ id, params, write }) {
 async function send({ id, params, write }) {
   const sessionID = params.sessionId;
   const controller = new AbortController();
-  inflight.set(id, { sessionID, controller });
+  inflight.set(id, { sessionID, cwd: params.cwd, controller });
 
   const listener = (event) => routeSessionEvent(event, sessionID, write);
   listeners.set(sessionID, listener);
@@ -159,7 +175,9 @@ async function send({ id, params, write }) {
     if (params.agent) body.agent = params.agent;
     if (params.model) {
       if (typeof params.model === 'string') {
-        const [providerID, modelID] = params.model.split('/');
+        const separator = params.model.indexOf('/');
+        const providerID = separator > 0 ? params.model.slice(0, separator) : '';
+        const modelID = separator > 0 ? params.model.slice(separator + 1) : '';
         if (providerID && modelID) body.model = { providerID, modelID };
       } else if (params.model?.providerID && params.model?.modelID) {
         body.model = params.model;
@@ -169,20 +187,42 @@ async function send({ id, params, write }) {
     // as soon as the message is enqueued so we don't block the daemon.
     const promptPromise = client.session.promptAsync({
       path: { id: sessionID },
-      query: { directory: params.cwd },
+      query: params.cwd ? { directory: params.cwd } : undefined,
       body,
       signal: controller.signal,
     });
     // Wait for the session to go idle (or errored / cancelled).
     await new Promise((resolve, reject) => {
       const originalListener = listeners.get(sessionID);
+      let timeout;
+      const fail = (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      };
+      const armTimeout = () => {
+        clearTimeout(timeout);
+        timeout = setTimeout(
+          () => fail(new Error(`no OpenCode events received for ${TURN_INACTIVITY_TIMEOUT_MS / 60_000} minutes`)),
+          TURN_INACTIVITY_TIMEOUT_MS,
+        );
+      };
+      const finish = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
       listeners.set(sessionID, (event) => {
         originalListener?.(event);
-        if (event?.type === 'session.idle' || event?.type === 'session.error') resolve();
-        if (event?.type === 'session.deleted') resolve();
+        armTimeout();
+        if (event?.type === 'session.idle' || event?.type === 'session.error') finish();
+        if (event?.type === 'session.deleted') finish();
       });
-      controller.signal.addEventListener('abort', () => resolve());
-      promptPromise.catch((e) => reject(e));
+      controller.signal.addEventListener('abort', finish, { once: true });
+      promptPromise
+        .then((result) => {
+          if (result?.error) fail(new Error(errorMessage(result.error)));
+        })
+        .catch(fail);
+      armTimeout();
     });
     write({ event: 'turn.done', data: {} });
     write({ done: true });
@@ -206,7 +246,11 @@ async function send({ id, params, write }) {
 async function cancel({ id, params, write }) {
   try {
     const { client } = await ensureClient();
-    await client.session.abort({ path: { id: params.sessionId } });
+    const result = await client.session.abort({
+      path: { id: params.sessionId },
+      query: params.cwd ? { directory: params.cwd } : undefined,
+    });
+    if (result?.error) throw new Error(errorMessage(result.error));
     write({ done: true });
   } catch (e) {
     write({ error: { message: `opencode.cancel failed: ${e && e.message ? e.message : e}` } });
@@ -222,7 +266,11 @@ export async function abortRequest(requestId) {
   try { rec.controller.abort(); } catch { /* ignore */ }
   try {
     const { client } = await ensureClient();
-    await client.session.abort({ path: { id: rec.sessionID } });
+    const result = await client.session.abort({
+      path: { id: rec.sessionID },
+      query: rec.cwd ? { directory: rec.cwd } : undefined,
+    });
+    if (result?.error) throw new Error(errorMessage(result.error));
   } catch { /* server may already be down */ }
   return true;
 }
@@ -230,17 +278,12 @@ export async function abortRequest(requestId) {
 async function answerPermission({ id, params, write }) {
   try {
     const { client } = await ensureClient();
-    // The permission endpoint path varies between SDK versions; try both known shapes.
-    const permCall = client.session.permissions?.reply
-      ?? client.session.permission?.reply
-      ?? client.session.permission;
-    if (typeof permCall !== 'function') {
-      throw new Error('opencode SDK missing permission reply endpoint');
-    }
-    await permCall.call(client.session, {
+    const result = await client.postSessionIdPermissionsPermissionId({
       path: { id: params.sessionId, permissionID: params.permissionId },
+      query: params.cwd ? { directory: params.cwd } : undefined,
       body: { response: params.allow ? 'once' : 'reject' },
     });
+    if (result?.error) throw new Error(errorMessage(result.error));
     write({ done: true });
   } catch (e) {
     write({ error: { message: `opencode.answerPermission failed: ${e && e.message ? e.message : e}` } });
@@ -334,4 +377,14 @@ function truncate(s, max) {
   if (!s) return s;
   if (s.length <= max) return s;
   return s.slice(0, max) + `\n… [truncated ${s.length - max} chars]`;
+}
+
+function errorMessage(error) {
+  if (!error) return 'unknown error';
+  if (typeof error === 'string') return error;
+  return error.message
+    ?? error.data?.message
+    ?? error.error?.message
+    ?? error.name
+    ?? JSON.stringify(error);
 }

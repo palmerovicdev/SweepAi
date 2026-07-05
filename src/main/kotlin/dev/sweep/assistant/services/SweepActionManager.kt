@@ -13,7 +13,6 @@ class SweepActionManager(
     var historyAction: AnAction? = null
     var showTutorialAction: AnAction? = null
     var reportAction: AnAction? = null
-    var settingsAction: AnAction? = null
     var openSettingsAction: AnAction? = null
     var addToContextAction: AnAction? = null
     var commitMessageAction: AnAction? = null
@@ -30,7 +29,6 @@ class SweepActionManager(
         historyAction = null
         showTutorialAction = null
         reportAction = null
-        settingsAction = null
         openSettingsAction = null
         addToContextAction = null
         commitMessageAction = null

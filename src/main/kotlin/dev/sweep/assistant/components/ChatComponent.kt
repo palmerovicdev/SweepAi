@@ -56,9 +56,6 @@ class ChatComponent(
 
     private val logger = Logger.getInstance(ChatComponent::class.java)
 
-    // Cache the current mode
-    private var savedMode: String = SweepComponent.getMode(project)
-
     private val streamStateListener: StreamStateListener
 
     // Track streaming state
@@ -70,7 +67,6 @@ class ChatComponent(
     private var indicatorsPanel: JPanel
     private var hintsPanel: JPanel
     private var feedbackComponent: FeedbackComponent
-    private var responsiveModelPickerManager: ResponsiveModelPickerManager? = null
 
     private var dragDropHandler: DragDropHandler? = null
     private var unifiedBannerContainer: UnifiedBannerContainer? = null
@@ -135,8 +131,6 @@ class ChatComponent(
     private var suggestionHint: JLabel
     private var suggestedGeneralTextSnippetHint: JLabel
     private var planHint: JLabel
-    private var modelPicker: ModelPickerMenu
-    private var modeToggle: ModePickerMenu? = null
     private var runPlanButton: RunPlanButton? = null
     private var planningModeIndicator: JLabel
 
@@ -449,80 +443,41 @@ class ChatComponent(
                                         JPanel(BorderLayout()).apply {
                                             background = null
                                             border = JBUI.Borders.empty()
-                                            modelPicker =
-                                                ModelPickerMenu(
-                                                    project,
-                                                    this@ChatComponent,
-                                                ).apply {
-                                                    withSweepFont(project)
-                                                    isVisible = true
-                                                    background = null
-                                                    toolTipText = "Select model"
-                                                    cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-                                                    addModelChangeListener { model ->
-                                                        SweepComponent.setSelectedModel(project, model)
-                                                    }
-                                                }
-
-                                            // Left side with model picker
-                                            val modelPickerContainer =
-                                                JPanel(BorderLayout()).apply {
-                                                    background = SweepColors.transparent
-                                                    border = JBUI.Borders.emptyLeft(4)
-                                                    add(modelPicker, BorderLayout.CENTER)
-                                                }
-
                                             // Response feedback container
                                             feedbackComponent =
                                                 FeedbackComponent(
                                                     project,
-                                                    { modelPicker.getModel() },
+                                                    { selectedModelIdForCurrentProvider() },
                                                     { filesInContextComponent.currentOpenFile },
                                                 )
 
-                                            modeToggle =
-                                                ModePickerMenu(project, this@ChatComponent).apply {
-                                                    withSweepFont(project)
-                                                    isVisible = false
-                                                    background = null
-                                                    setBorderOverride(JBUI.Borders.empty(2, 6))
-                                                    toolTipText = "Select mode"
-                                                    cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-                                                    addModeChangeListener { mode ->
-                                                        SweepComponent.setMode(project, mode)
-                                                    }
-                                                    toolTipText = "Toggle (${SweepConstants.META_KEY}.)"
-                                                    // Always enabled since we're not waiting for sync
-                                                    isEnabled = true
-                                                    // Show all options since we're not dependent on sync
-                                                    setAvailableOptions(SweepConstants.CHAT_MODES)
-                                                }
-
-                                            // External-provider pill row: provider selector, approval/agent-profile
-                                            // (mode slot), and reasoning effort (Codex only). All three toggle
-                                            // their visibility from `SweepSettings.chatProviderId`; the shared
-                                            // handler below re-hydrates them whenever any settings change.
+                                            // Provider-native controls. The former Sweep mode/model controls
+                                            // ("Agent" and "Auto") are intentionally not part of this composer.
                                             externalAgentQuickSettings =
-                                                dev.sweep.assistant.views.ExternalAgentQuickSettings(project, this@ChatComponent)
+                                                dev.sweep.assistant.views.ExternalAgentQuickSettings(
+                                                    project,
+                                                    this@ChatComponent
+                                                )
                                             agentProviderModePicker =
-                                                dev.sweep.assistant.views.AgentProviderModePicker(project, this@ChatComponent)
+                                                dev.sweep.assistant.views.AgentProviderModePicker(
+                                                    project,
+                                                    this@ChatComponent
+                                                )
                                             reasoningEffortPickerMenu =
-                                                dev.sweep.assistant.views.ReasoningEffortPickerMenu(project, this@ChatComponent)
+                                                dev.sweep.assistant.views.ReasoningEffortPickerMenu(
+                                                    project,
+                                                    this@ChatComponent
+                                                )
                                             opencodeModelPicker =
-                                                dev.sweep.assistant.views.OpencodeModelPicker(project, this@ChatComponent)
+                                                dev.sweep.assistant.views.OpencodeModelPicker(
+                                                    project,
+                                                    this@ChatComponent
+                                                )
 
                                             project.messageBus.connect(this@ChatComponent).subscribe(
                                                 dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier.TOPIC,
                                                 dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier {
                                                     ApplicationManager.getApplication().invokeLater {
-                                                        val pid = dev.sweep.assistant.settings.SweepSettings.getInstance().chatProviderId
-                                                        val external = pid == "codex" || pid == "opencode"
-                                                        // External providers replace both the mode selector
-                                                        // ("Agent") and the model picker ("Auto"): approval
-                                                        // policy / agent profile owns the mode slot, and each
-                                                        // provider has its own model dropdown in Settings.
-                                                        modeToggle?.isVisible = !external
-                                                        modelPicker.isVisible = !external
                                                         externalAgentQuickSettings?.refresh()
                                                         agentProviderModePicker?.refresh()
                                                         reasoningEffortPickerMenu?.refresh()
@@ -530,21 +485,14 @@ class ChatComponent(
                                                     }
                                                 },
                                             )
-                                            // Apply initial visibility (equivalent to the notifier body above).
-                                            val initialPid = dev.sweep.assistant.settings.SweepSettings.getInstance().chatProviderId
-                                            val initialExternal = initialPid == "codex" || initialPid == "opencode"
-                                            modeToggle?.isVisible = !initialExternal
-                                            modelPicker.isVisible = !initialExternal
 
-                                            // Create a left container for the model picker and mode toggle
+                                            // Create a left container for provider-native controls.
                                             val leftContainer =
                                                 JPanel(GridBagLayout()).apply {
                                                     background = SweepColors.chatAndUserMessageBackground
                                                     border = JBUI.Borders.empty() // Remove any default padding
                                                     isOpaque = true // Ensure opacity is consistent
-                                                    add(modeToggle)
                                                     agentProviderModePicker?.let { add(it) }
-                                                    add(modelPickerContainer)
                                                     opencodeModelPicker?.let { add(it) }
                                                     reasoningEffortPickerMenu?.let { add(it) }
                                                     externalAgentQuickSettings?.let { add(it) }
@@ -609,17 +557,6 @@ class ChatComponent(
                                                     add(runPlanButton)
                                                 }
                                             add(rightContainer, BorderLayout.EAST)
-
-                                            // Set up responsive model picker manager
-                                            responsiveModelPickerManager =
-                                                ResponsiveModelPickerManager(
-                                                    modelPicker,
-                                                    leftContainer,
-                                                    rightContainer,
-                                                    this,
-                                                    minimumSpacing = 16,
-                                                    modeToggle = modeToggle,
-                                                )
                                         }
 
                                     // Add the top row and hints panel to the main layout
@@ -634,8 +571,6 @@ class ChatComponent(
                         }.also { add(it) }
             }
 
-        setupModeToggleShortcut()
-        setupModelPickerShortcut()
         setupPlanActShortcut()
 
         // Register banner update callback with AppliedCodeBlockManager
@@ -774,7 +709,6 @@ class ChatComponent(
             SweepComponent.MODE_STATE_TOPIC,
             object : SweepComponent.ModeStateListener {
                 override fun onModeChanged(mode: String) {
-                    modeToggle?.let {}
                     // Update planning mode indicator visibility
                     planningModeIndicator.isVisible = SweepComponent.getPlanningMode(project)
                     // Update send button text when mode changes
@@ -828,7 +762,6 @@ class ChatComponent(
                     updateFeedbackContainerVisibility()
 
                     // Update placeholder based on planning mode when streaming ends
-                    val currentMode = SweepComponent.getMode(project)
                     val planningModeEnabled = SweepComponent.getPlanningMode(project)
                     if (planningModeEnabled) {
                         textField.setPlaceholder(SweepConstants.CONTINUE_PLANNING_PLACEHOLDER)
@@ -860,9 +793,7 @@ class ChatComponent(
             },
         )
 
-        // Set up responsive behavior after component initialization
         ApplicationManager.getApplication().invokeLater {
-            responsiveModelPickerManager?.setupResponsiveBehavior(chatPanel)
             // Update initial send button text
             updateChatComponentButtons()
             // Initialize token usage indicator (will be set by SweepSessionUI.onActivated)
@@ -912,25 +843,6 @@ class ChatComponent(
 
         // Add the resize listener to the chat panel
         chatPanel.addComponentListener(chatComponentResizeListener)
-
-        // Set up theme change handlers for components after initialization
-        modelPicker.apply {
-            SweepColorChangeService.getInstance(project).addThemeChangeListener(this@ChatComponent) {
-                parent?.parent?.background = SweepColors.transparent
-                parent?.background = SweepColors.chatAndUserMessageBackground
-                background = SweepColors.transparent
-                repaint()
-            }
-        }
-
-        modeToggle?.apply {
-            SweepColorChangeService.getInstance(project).addThemeChangeListener(this@ChatComponent) {
-                parent?.parent?.background = SweepColors.transparent
-                parent?.background = SweepColors.chatAndUserMessageBackground
-                background = SweepColors.sendButtonColor
-                repaint()
-            }
-        }
 
         // Clear text field on theme change to ensure fresh state
         SweepColorChangeService.getInstance(project).addThemeChangeListener(this@ChatComponent) {
@@ -985,7 +897,7 @@ class ChatComponent(
 
     private fun shouldEnableHover(): Boolean =
         IDEVersion.current().isNewerThan(IDEVersion.fromString("2024.3.6")) &&
-            !System.getProperty("os.name").lowercase().contains("windows")
+                !System.getProperty("os.name").lowercase().contains("windows")
 
     private fun shouldShowContinuePlan(): Boolean {
         val isAgentMode = SweepComponent.getMode(project) == "Agent"
@@ -1236,30 +1148,6 @@ class ChatComponent(
         }
         suggestionPulser?.stop()
 
-        // External chat providers replace both these pills — respect that on reset.
-        val externalProvider = dev.sweep.assistant.settings.SweepSettings.getInstance()
-            .chatProviderId.let { it == "codex" || it == "opencode" }
-
-        modelPicker.apply {
-            parent?.parent?.background = SweepColors.transparent
-            parent?.background = SweepColors.chatAndUserMessageBackground // important: this makes it invisible
-            parent?.isFocusable = false
-            background = SweepColors.transparent
-            isVisible = !externalProvider
-        }
-
-        modeToggle?.apply {
-            parent?.parent?.background = SweepColors.transparent
-            parent?.background = SweepColors.chatAndUserMessageBackground // important: this makes it invisible
-            parent?.isFocusable = false
-            background = SweepColors.transparent
-            isVisible = !externalProvider
-
-            setAvailableOptions(
-                SweepConstants.CHAT_MODES,
-            )
-        }
-
         runPlanButton?.apply {
             background = SweepColors.sendButtonColor
             foreground = SweepColors.sendButtonColorForeground
@@ -1271,8 +1159,6 @@ class ChatComponent(
         childComponent.revalidate()
         childComponent.repaint()
 
-        // Force update responsive behavior after reset
-        responsiveModelPickerManager?.forceUpdate()
     }
 
     fun moveToBottom() {
@@ -1429,8 +1315,7 @@ class ChatComponent(
         // Stop pulsing on send
         sendButton.isPulsing = false
 
-        // Get the selected model from the model picker
-        val selectedModel = modelPicker.getModel()
+        val selectedModel = selectedModelIdForCurrentProvider()
 
         // Mark the current version as shown so the notification doesn't appear again
         val currentVersion = getCurrentSweepPluginVersion() ?: "unknown"
@@ -1829,7 +1714,7 @@ class ChatComponent(
                         !SweepConfig
                             .getInstance(project)
                             .isNewTerminalUIEnabled() ||
-                            TerminalApiWrapper.getIsNewApiAvailable(),
+                                TerminalApiWrapper.getIsNewApiAvailable(),
                     mcp_tools = allTools,
                     allow_powershell = true,
                     is_planning_mode = planningModeEnabled,
@@ -1867,8 +1752,16 @@ class ChatComponent(
         }
     }
 
-    // Add this function to ChatComponent
-    fun getSelectedModelId(): String = modelPicker.getModel()
+    fun getSelectedModelId(): String = selectedModelIdForCurrentProvider()
+
+    private fun selectedModelIdForCurrentProvider(): String {
+        val settings = dev.sweep.assistant.settings.SweepSettings.getInstance()
+        return when (settings.chatProviderId) {
+            "opencode" -> settings.opencodeModel
+            "codex" -> settings.codexModel
+            else -> SweepComponent.getSelectedModel(project).ifBlank { "auto" }
+        }
+    }
 
     // Add this function to ChatComponent
     fun isFirstMessage(): Boolean = MessageList.getInstance(project).isEmpty()
@@ -1893,10 +1786,6 @@ class ChatComponent(
 
         // Remove the stream state listener
         StreamStateService.getInstance(project).removeListener(streamStateListener)
-
-        // Clean up responsive model picker manager
-        responsiveModelPickerManager?.dispose()
-        responsiveModelPickerManager = null
 
         // Clean up unified drag drop handler
         dragDropHandler = null
@@ -1924,75 +1813,6 @@ class ChatComponent(
         tokenIndicatorContainer = null
 
         imageUploadButton = null
-    }
-
-    private fun setupModeToggleShortcut() {
-        val cmdDotKeyStroke =
-            KeyStroke.getKeyStroke(
-                KeyEvent.VK_PERIOD,
-                if (System.getProperty("os.name").lowercase().contains("mac")) {
-                    InputEvent.META_DOWN_MASK
-                } else {
-                    InputEvent.CTRL_DOWN_MASK
-                },
-            )
-        textField.textArea.inputMap.put(cmdDotKeyStroke, "toggleSearchMode")
-
-        textField.textArea.actionMap.put(
-            "toggleSearchMode",
-            object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent?) {
-                    modeToggle?.let {
-                        if (it.isVisible && it.isEnabled) {
-                            // Mark the shortcut as used
-                            SweepMetaData.getInstance().chatModeToggleUsed = true
-                            modeToggle?.updateSecondaryText()
-
-                            // Cycle through modes: chat -> agent -> chat
-                            val currentMode = SweepComponent.getMode(project)
-                            val nextMode =
-                                when (currentMode) {
-                                    "Ask" -> "Agent"
-                                    "Agent" -> "Ask"
-                                    else -> "Agent"
-                                }
-                            SweepComponent.setMode(project, nextMode)
-                        }
-                    }
-                }
-            },
-        )
-    }
-
-    private fun setupModelPickerShortcut() {
-        val cmdSlashKeyStroke =
-            KeyStroke.getKeyStroke(
-                KeyEvent.VK_SLASH,
-                if (System.getProperty("os.name").lowercase().contains("mac")) {
-                    InputEvent.META_DOWN_MASK
-                } else {
-                    InputEvent.CTRL_DOWN_MASK
-                },
-            )
-        textField.textArea.inputMap.put(cmdSlashKeyStroke, "toggleModelPicker")
-
-        textField.textArea.actionMap.put(
-            "toggleModelPicker",
-            object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent?) {
-                    modelPicker.let {
-                        if (it.isVisible && it.isEnabled) {
-                            // Mark the shortcut as used
-                            SweepMetaData.getInstance().modelToggleUsed = true
-                            modelPicker.updateSecondaryText()
-
-                            // Use the new cycleToNextModel method which respects favorites
-                            modelPicker.cycleToNextModel()
-                        }
-                    }
-                }
-            },
-        )
     }
 
     private fun setupPlanActShortcut() {

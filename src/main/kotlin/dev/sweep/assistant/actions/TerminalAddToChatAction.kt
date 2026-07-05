@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.wm.ToolWindowManager
 import dev.sweep.assistant.components.ChatComponent
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.theme.SweepIcons
 import dev.sweep.assistant.utils.SweepConstants
 import dev.sweep.assistant.utils.TerminalSelectionUtils
@@ -37,6 +38,7 @@ class TerminalAddToChatAction : AnAction() {
     }
 
     override fun update(e: AnActionEvent) {
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         val project = e.project
         if (project == null) {
             e.presentation.isEnabledAndVisible = false

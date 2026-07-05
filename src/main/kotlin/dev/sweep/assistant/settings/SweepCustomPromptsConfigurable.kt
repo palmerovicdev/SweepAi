@@ -2,7 +2,9 @@ package dev.sweep.assistant.settings
 
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
+import com.intellij.ui.components.JBLabel
 import dev.sweep.assistant.components.SweepConfig
+import dev.sweep.assistant.settings.SweepSettings
 import javax.swing.JComponent
 import javax.swing.JPanel
 
@@ -18,6 +20,12 @@ class SweepCustomPromptsConfigurable(
     private var component: JPanel? = null
 
     override fun createComponent(): JComponent {
+        if (SweepSettings.getInstance().autocompleteOnlyMode) {
+            return JBLabel(
+                "Custom prompts are hidden while autocomplete-only mode is enabled. " +
+                    "Disable it under Sweep Autocomplete settings to restore chat and agent features.",
+            )
+        }
         val panel = component ?: SweepConfig.getInstance(project).createCustomPromptsPanel()
         component = panel
         return panel

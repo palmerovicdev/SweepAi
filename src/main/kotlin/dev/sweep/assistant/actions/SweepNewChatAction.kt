@@ -4,6 +4,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.wm.ToolWindowManager
 import dev.sweep.assistant.components.SweepComponent
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.settings.SweepMetaData
 import dev.sweep.assistant.utils.SweepConstants.TOOLWINDOW_NAME
 
@@ -20,6 +21,7 @@ class SweepNewChatAction : AnAction() {
     }
 
     override fun update(e: AnActionEvent) {
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         val project = e.project
         // Only enable when Sweep tool window is visible and focused
         e.presentation.isEnabled = project != null && isSweepToolWindowFocused(project)

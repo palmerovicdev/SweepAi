@@ -88,6 +88,12 @@ class SweepChatProviderConfigurable(
     private var component: JPanel? = null
 
     override fun createComponent(): JComponent {
+        if (SweepSettings.getInstance().autocompleteOnlyMode) {
+            return JBLabel(
+                "Chat provider settings are hidden while autocomplete-only mode is enabled. " +
+                    "Disable it under Sweep Autocomplete settings to restore chat and agent features.",
+            )
+        }
         if (component == null) {
             buildOpencodePanel()
             buildCodexPanel()

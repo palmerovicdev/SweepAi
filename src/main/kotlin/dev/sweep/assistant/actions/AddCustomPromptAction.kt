@@ -5,6 +5,7 @@ import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.wm.ToolWindowManager
 import dev.sweep.assistant.settings.SweepCustomPromptsConfigurable
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.utils.SweepConstants
 
 /**
@@ -26,6 +27,7 @@ class AddCustomPromptAction : AnAction() {
 
     override fun update(e: AnActionEvent) {
         super.update(e)
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
 //        e.presentation.icon = icon
         e.presentation.text = "Add Custom Prompt..."
         e.presentation.isEnabled = e.project != null

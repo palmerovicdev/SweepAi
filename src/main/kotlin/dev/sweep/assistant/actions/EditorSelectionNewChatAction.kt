@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.diagnostic.Logger
 import dev.sweep.assistant.components.SweepComponent
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.theme.SweepIcons
 import dev.sweep.assistant.utils.appendSelectionToChat
 import dev.sweep.assistant.utils.isTerminalContext
@@ -36,6 +37,7 @@ class EditorSelectionNewChatAction : AnAction() {
     }
 
     override fun update(e: AnActionEvent) {
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         val editor = e.getData(CommonDataKeys.EDITOR)
         val project = e.project
         e.presentation.isVisible =

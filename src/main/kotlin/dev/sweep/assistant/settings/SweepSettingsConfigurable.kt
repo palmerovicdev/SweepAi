@@ -40,6 +40,8 @@ class SweepSettingsConfigurable(
         get() = SweepConfig.getInstance(project)
 
     private val enabledField = JBCheckBox("Enable autocomplete")
+    private val autocompleteOnlyField =
+        JBCheckBox("Autocomplete only (hide chat, agent, and commit message features)")
     private val localModeField = JBCheckBox("Use local autocomplete server")
     private val autoStartField = JBCheckBox("Start server automatically when IDE starts")
     private val acceptWordField = JBCheckBox("Accept the next word with Right Arrow")
@@ -130,6 +132,15 @@ class SweepSettingsConfigurable(
                 FormBuilder
                     .createFormBuilder()
                     .addComponent(JBLabel("Autocomplete"))
+                    .addComponent(autocompleteOnlyField)
+                    .addComponent(
+                        JBLabel(
+                            "When enabled, the Sweep chat tool window, commit message generator, " +
+                                "and all agent shortcuts and menus are hidden. Only tab autocomplete stays active.",
+                        ).apply {
+                            foreground = JBColor.GRAY
+                        },
+                    )
                     .addComponent(enabledField)
                     .addComponent(acceptWordField)
                     .addComponent(showBadgeField)
@@ -349,6 +360,7 @@ class SweepSettingsConfigurable(
             if (currentManagedSelected()) "" else if (isValidExternalUrl(externalUrlText)) externalUrlText else ""
 
         return enabledField.isSelected != settings.nextEditPredictionFlagOn ||
+            autocompleteOnlyField.isSelected != settings.autocompleteOnlyMode ||
             localModeField.isSelected != settings.autocompleteLocalMode ||
             autoStartField.isSelected != settings.autoStartLocalServer ||
             acceptWordField.isSelected != settings.acceptWordOnRightArrow ||
@@ -394,6 +406,8 @@ class SweepSettingsConfigurable(
         val effectiveBackend = if (needsBackendRevert) BACKEND_LLAMACPP_KEY else selectedBackend
 
         settings.nextEditPredictionFlagOn = enabledField.isSelected
+        val wasAutocompleteOnly = settings.autocompleteOnlyMode
+        settings.autocompleteOnlyMode = autocompleteOnlyField.isSelected
         settings.autoStartLocalServer = autoStartField.isSelected
         settings.acceptWordOnRightArrow = acceptWordField.isSelected
         config.updateShowAutocompleteBadge(showBadgeField.isSelected)
@@ -414,6 +428,10 @@ class SweepSettingsConfigurable(
         config.updateAutocompleteExternalUrl(newExternalUrl)
 
         settings.notifySettingsChanged()
+
+        if (wasAutocompleteOnly != settings.autocompleteOnlyMode) {
+            SweepFeatureGate.applyToolWindowAvailability(project)
+        }
 
         val isNowLocalMode = localModeField.isSelected
         val isNowManaged = newExternalUrl.isBlank()
@@ -458,6 +476,7 @@ class SweepSettingsConfigurable(
 
     override fun reset() {
         enabledField.isSelected = settings.nextEditPredictionFlagOn
+        autocompleteOnlyField.isSelected = settings.autocompleteOnlyMode
         localModeField.isSelected = settings.autocompleteLocalMode
         autoStartField.isSelected = settings.autoStartLocalServer
         acceptWordField.isSelected = settings.acceptWordOnRightArrow

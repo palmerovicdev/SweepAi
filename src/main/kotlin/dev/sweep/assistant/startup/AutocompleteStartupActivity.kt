@@ -11,6 +11,7 @@ import dev.sweep.assistant.services.IdeaVimIntegrationService
 import dev.sweep.assistant.services.LocalAutocompleteServerManager
 import dev.sweep.assistant.services.RipgrepManager
 import dev.sweep.assistant.services.SweepProjectService
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.settings.SweepSettings
 
 /**
@@ -34,6 +35,16 @@ class AutocompleteStartupActivity : ProjectActivity {
             ApplicationManager.getApplication().executeOnPooledThread {
                 LocalAutocompleteServerManager.getInstance().ensureServerRunning()
             }
+        }
+
+        ApplicationManager.getApplication().invokeLater {
+            SweepFeatureGate.applyToolWindowAvailability(project)
+            project.messageBus.connect(SweepProjectService.getInstance(project)).subscribe(
+                SweepSettings.SettingsChangedNotifier.TOPIC,
+                SweepSettings.SettingsChangedNotifier {
+                    SweepFeatureGate.applyToolWindowAvailability(project)
+                },
+            )
         }
     }
 }

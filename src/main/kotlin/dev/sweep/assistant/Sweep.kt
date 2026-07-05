@@ -467,6 +467,7 @@ class Sweep :
     }
 
     override suspend fun isApplicableAsync(project: Project): Boolean {
+        if (SweepSettings.getInstance().autocompleteOnlyMode) return false
         // Register tool window only if not in frontend mode
         return SweepConstants.GATEWAY_MODE != SweepConstants.GatewayMode.CLIENT
     }

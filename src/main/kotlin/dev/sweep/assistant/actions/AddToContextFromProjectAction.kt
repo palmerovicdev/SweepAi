@@ -9,6 +9,7 @@ import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.wm.ToolWindowManager
 import dev.sweep.assistant.components.ChatComponent
 import dev.sweep.assistant.services.SweepNonProjectFilesService
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.utils.SweepConstants
 
 class AddToContextFromProjectAction : AnAction() {
@@ -78,6 +79,7 @@ class AddToContextFromProjectAction : AnAction() {
     }
 
     override fun update(e: AnActionEvent) {
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         val virtualFiles = e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY)
         e.presentation.isVisible = virtualFiles != null
     }

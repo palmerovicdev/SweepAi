@@ -42,6 +42,7 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
 
         // Default to false - do not automatically disable conflicting autocomplete plugins
         private const val DEFAULT_DISABLE_CONFLICTING_PLUGINS = true
+        private const val DEFAULT_AUTOCOMPLETE_ONLY_MODE = false
 
         fun getInstance(): SweepSettings = ApplicationManager.getApplication().getService(SweepSettings::class.java)
 
@@ -104,6 +105,20 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
                 if (!value) {
                     TelemetryService.getInstance().sendUsageEvent(EventType.AUTOCOMPLETE_DISABLED)
                 }
+            } else {
+                field = value
+            }
+        }
+
+    /**
+     * When enabled, hides chat, agent, commit-message, and all other non-autocomplete
+     * UI. Only tab autocomplete remains active.
+     */
+    var autocompleteOnlyMode: Boolean = DEFAULT_AUTOCOMPLETE_ONLY_MODE
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
             } else {
                 field = value
             }

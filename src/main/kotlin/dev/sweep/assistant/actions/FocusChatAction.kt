@@ -4,6 +4,7 @@ import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.util.IconLoader
 import dev.sweep.assistant.components.ChatComponent
 import dev.sweep.assistant.components.MessagesComponent
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.utils.isTerminalContext
 import dev.sweep.assistant.utils.isTerminalFocused
 
@@ -36,6 +37,7 @@ class FocusChatAction : AnAction() {
 
     override fun update(e: AnActionEvent) {
         super.update(e)
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         val project = e.getData(CommonDataKeys.PROJECT)
 //        e.presentation.icon = icon
         e.presentation.text = "Add Selection to Sweep Agent"

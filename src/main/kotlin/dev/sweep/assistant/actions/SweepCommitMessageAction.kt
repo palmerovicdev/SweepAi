@@ -10,6 +10,7 @@ import com.intellij.openapi.vcs.VcsDataKeys
 import com.intellij.openapi.vcs.ui.CommitMessage
 import com.intellij.vcs.commit.AbstractCommitWorkflowHandler
 import dev.sweep.assistant.services.SweepCommitMessageService
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.settings.SweepMetaData
 import dev.sweep.assistant.theme.SweepIcons
 import dev.sweep.assistant.utils.getPartialChanges
@@ -26,6 +27,7 @@ class SweepCommitMessageAction : AnAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 
     override fun update(e: AnActionEvent) {
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         val hasCommitContext =
             e.project != null &&
                 e.getData(VcsDataKeys.COMMIT_MESSAGE_CONTROL) is CommitMessage

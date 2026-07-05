@@ -11,6 +11,7 @@ import com.intellij.openapi.vfs.findDocument
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.util.ui.tree.TreeUtil
 import dev.sweep.assistant.components.ChatComponent
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.theme.SweepIcons
 import dev.sweep.assistant.utils.SweepConstants
 
@@ -65,6 +66,7 @@ class SweepProblemsAction : AnAction() {
     }
 
     override fun update(e: AnActionEvent) {
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         e.project?.let { project ->
             ProblemsView.getSelectedPanel(project)?.tree?.selectionPath?.let { path ->
                 TreeUtil.getLastUserObject(ProblemNode::class.java, path)?.let { node ->

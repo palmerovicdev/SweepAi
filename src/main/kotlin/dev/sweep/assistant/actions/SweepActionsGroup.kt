@@ -2,6 +2,7 @@ package dev.sweep.assistant.actions
 
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.util.IconLoader
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.settings.SweepSettings
 import dev.sweep.assistant.utils.SweepConstants
 
@@ -13,6 +14,9 @@ class SweepActionsGroup : ActionGroup() {
     private val icon = IconLoader.getIcon("/icons/sweep16x16.svg", SweepActionsGroup::class.java)
 
     override fun getChildren(e: AnActionEvent?): Array<AnAction> {
+        if (SweepFeatureGate.isAutocompleteOnlyMode()) {
+            return emptyArray()
+        }
         // In CLIENT mode, don't show any actions
         if (SweepConstants.GATEWAY_MODE == SweepConstants.GatewayMode.CLIENT) {
             return emptyArray()
@@ -46,6 +50,7 @@ class SweepActionsGroup : ActionGroup() {
 
     override fun update(e: AnActionEvent) {
         super.update(e)
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         e.presentation.icon = icon
         e.presentation.text = "Sweep Actions"
         // Enable if there's a project

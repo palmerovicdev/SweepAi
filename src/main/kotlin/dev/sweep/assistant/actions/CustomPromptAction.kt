@@ -5,6 +5,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.util.IconLoader
 import dev.sweep.assistant.components.ChatComponent
 import dev.sweep.assistant.components.MessagesComponent
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.tracking.EventType
 import dev.sweep.assistant.tracking.TelemetryService
 import dev.sweep.assistant.utils.isTerminalContext
@@ -61,6 +62,7 @@ class CustomPromptAction(
 
     override fun update(e: AnActionEvent) {
         super.update(e)
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         val project = e.getData(CommonDataKeys.PROJECT)
 //        e.presentation.icon = icon
         e.presentation.text = promptName

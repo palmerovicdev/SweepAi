@@ -11,6 +11,7 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.util.IconLoader
 import dev.sweep.assistant.components.ChatComponent
 import dev.sweep.assistant.settings.SweepCustomPromptsConfigurable
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.settings.SweepMetaData
 import dev.sweep.assistant.settings.SweepSettings
 import dev.sweep.assistant.tracking.EventType
@@ -140,6 +141,7 @@ class ReviewPRAction : AnAction() {
 
     override fun update(e: AnActionEvent) {
         super.update(e)
+        if (SweepFeatureGate.hideNonAutocompleteFeatures(e)) return
         val project = e.getData(CommonDataKeys.PROJECT)
         // note there is an edge case with the actual terminal in which this is wrong
         e.presentation.isEnabled = project != null && !isTerminalContext(e) && !isTerminalFocused(e, project)

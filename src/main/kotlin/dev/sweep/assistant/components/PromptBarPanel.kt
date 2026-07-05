@@ -39,6 +39,7 @@ import dev.sweep.assistant.data.Message
 import dev.sweep.assistant.data.MessageRole
 import dev.sweep.assistant.services.AppliedCodeBlockManager
 import dev.sweep.assistant.services.PromptBarService
+import dev.sweep.assistant.settings.SweepFeatureGate
 import dev.sweep.assistant.services.SweepNonProjectFilesService
 import dev.sweep.assistant.theme.SweepColors
 import dev.sweep.assistant.utils.AutoComponentListener
@@ -2000,6 +2001,7 @@ class PromptBarPanel(
 
 class ShowPromptBarAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
+        if (SweepFeatureGate.isAutocompleteOnlyMode()) return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val project = e.project ?: return
         val mainEditor = FileEditorManager.getInstance(project).selectedTextEditor
@@ -2073,5 +2075,11 @@ class ShowPromptBarAction : AnAction() {
 
         // Clear the editor's blue selection highlight because we track range via RangeMarker instead
         selectionModel.removeSelection()
+    }
+
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+    override fun update(e: AnActionEvent) {
+        SweepFeatureGate.hideNonAutocompleteFeatures(e)
     }
 }

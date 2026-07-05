@@ -403,6 +403,14 @@ class LocalAutocompleteServerManager : Disposable {
 
     fun restartServer() {
         if (!isManagedMode()) return
+        // Don't tear down a healthy server just to fail to start a replacement
+        // the platform can't run. startServer() would refuse the MLX boot and
+        // leave the user with no autocomplete backend.
+        if (currentBackend() == "mlx" && !isMacArm) {
+            val msg = "Cannot restart: MLX backend requires macOS on Apple Silicon."
+            showNotification(msg, NotificationType.ERROR)
+            return
+        }
         logger.info("Restarting local autocomplete server")
         lastRestartTime = System.currentTimeMillis()
         stopServer()

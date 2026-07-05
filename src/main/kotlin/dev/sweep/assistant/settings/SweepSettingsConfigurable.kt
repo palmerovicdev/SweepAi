@@ -362,6 +362,20 @@ class SweepSettingsConfigurable(
         val oldMlxRepo = settings.autocompleteMlxModelRepo
         val wasManaged = oldExternalUrl.isBlank()
 
+        // If MLX is selected on a platform that can't run it, don't persist the
+        // switch — otherwise the pool thread below would kill the running
+        // llama.cpp server and refuse to start MLX. Revert the combo so the UI
+        // reflects what was actually saved.
+        val selectedBackend = selectedBackendKey()
+        val effectiveBackend = if (selectedBackend == BACKEND_MLX_KEY && !isAppleSilicon()) {
+            backendCombo.selectedItem = BACKEND_LLAMACPP_LABEL
+            updateBackendRowsVisibility()
+            refreshMlxPlatformWarning()
+            oldBackend
+        } else {
+            selectedBackend
+        }
+
         settings.nextEditPredictionFlagOn = enabledField.isSelected
         settings.acceptWordOnRightArrow = acceptWordField.isSelected
         config.updateShowAutocompleteBadge(showBadgeField.isSelected)
@@ -372,7 +386,7 @@ class SweepSettingsConfigurable(
         config.updateAutocompleteLocalMode(localModeField.isSelected)
         config.updateAutocompleteLocalModelRepo(modelRepoField.text.trim())
         config.updateAutocompleteLocalModelFilename(modelFilenameField.text.trim())
-        config.updateAutocompleteBackend(selectedBackendKey())
+        config.updateAutocompleteBackend(effectiveBackend)
         config.updateAutocompleteMlxModelRepo(mlxModelRepoField.text.trim())
 
         val externalUrlText = externalUrlField.text.trim()
@@ -387,7 +401,7 @@ class SweepSettingsConfigurable(
         val newPort = portField.intValue()
         val newRepo = modelRepoField.text.trim()
         val newFilename = modelFilenameField.text.trim()
-        val newBackend = selectedBackendKey()
+        val newBackend = effectiveBackend
         val newMlxRepo = mlxModelRepoField.text.trim()
 
         val manager = LocalAutocompleteServerManager.getInstance()

@@ -18,9 +18,11 @@
     ]]></description>
     <change-notes><![CDATA[
 <ul>
-  <li><b>Bug Fixes and Improvements</b>
+  <li><b>New</b>
     <ul>
-        <li>Streamed file modifications now show additions and removals as they happen.</li>
+        <li>Plugin renamed to <b>Sweep Self-Hosted</b> for self-hosted installations.</li>
+        <li>Local autocomplete now supports an <b>MLX (Apple Silicon)</b> backend in addition to llama.cpp. Configure it in Settings &rarr; Sweep Autocomplete.</li>
+        <li>Model repository is now configurable per backend.</li>
     </ul>
   </li>
 </ul>

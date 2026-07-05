@@ -16,6 +16,7 @@ Run with::
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -194,9 +195,13 @@ def create_app(model_repo: str) -> FastAPI:
                 changes_above_cursor=changes_above_cursor,
             )
 
+            # mlx_lm.generate() is a blocking multi-second call. Running it
+            # directly in this async handler would stall the event loop and
+            # delay concurrent /health polls (which the plugin uses to decide
+            # whether to restart the server).
             t0 = time.monotonic()
-            completion = model.generate_completion(
-                built.prompt, max_new_tokens=DEFAULT_MAX_NEW_TOKENS
+            completion = await asyncio.to_thread(
+                model.generate_completion, built.prompt, DEFAULT_MAX_NEW_TOKENS
             )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
 

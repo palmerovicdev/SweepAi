@@ -189,6 +189,11 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
     // "llamacpp" (default, GGUF via sweep-autocomplete) or "mlx" (Apple Silicon, sweep-autocomplete-mlx)
     var autocompleteBackend: String = "llamacpp"
 
+    // Community-maintained MLX conversion of sweep-next-edit-v2. Not under an
+    // org Sweep controls — a compromised upload could produce adversarial
+    // completions (mlx-lm does not enable trust_remote_code, so this is not a
+    // direct RCE vector). Users may override in Settings; fork maintainers
+    // should point this at a repo they control or pin a specific revision.
     var autocompleteMlxModelRepo: String = "Cyanophyte/sweep-next-edit-v2-7B-mlx-8Bit"
 
     fun ensureDefaultPromptsInitialized() {

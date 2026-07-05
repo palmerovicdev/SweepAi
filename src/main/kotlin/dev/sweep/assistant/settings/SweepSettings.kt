@@ -217,6 +217,107 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
     // Empty string means "latest" (default).
     var autocompleteMlxModelRevision: String = ""
 
+    // ===== External Agent Chat =====
+    // "sweep-cloud" (default), "local", "opencode", "codex"
+    var chatProviderId: String = "sweep-cloud"
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+
+    // OpenCode
+    var opencodeCommand: String = "opencode"
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    var opencodeExtraArgs: String = ""
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    // Empty = Sweep manages the process; non-empty = user-provided base URL.
+    var opencodeBaseUrl: String = ""
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    var opencodeAgent: String = "build"
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+
+    // Codex
+    var codexCommand: String = "codex"
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    var codexExtraArgs: String = ""
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    // Empty = use Codex's persisted default.
+    var codexModel: String = ""
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    // "never" | "on-request" | "on-failure" | "untrusted"
+    var codexApprovalPolicy: String = "on-request"
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    // "read-only" | "workspace-write" | "danger-full-access"
+    var codexSandbox: String = "workspace-write"
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+
     fun ensureDefaultPromptsInitialized() {
         var addedPrompt = false
 

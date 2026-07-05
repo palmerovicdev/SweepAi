@@ -1084,6 +1084,68 @@ class SweepConfig(
         SweepSettings.getInstance().autocompleteMlxModelRevision = revision
     }
 
+    // ===== External Agent Chat =====
+
+    fun getChatProviderId(): String = SweepSettings.getInstance().chatProviderId
+
+    fun updateChatProviderId(providerId: String) {
+        SweepSettings.getInstance().chatProviderId = providerId
+    }
+
+    fun getOpencodeCommand(): String = SweepSettings.getInstance().opencodeCommand
+
+    fun updateOpencodeCommand(command: String) {
+        SweepSettings.getInstance().opencodeCommand = command
+    }
+
+    fun getOpencodeExtraArgs(): String = SweepSettings.getInstance().opencodeExtraArgs
+
+    fun updateOpencodeExtraArgs(args: String) {
+        SweepSettings.getInstance().opencodeExtraArgs = args
+    }
+
+    fun getOpencodeBaseUrl(): String = SweepSettings.getInstance().opencodeBaseUrl
+
+    fun updateOpencodeBaseUrl(baseUrl: String) {
+        SweepSettings.getInstance().opencodeBaseUrl = baseUrl
+    }
+
+    fun getOpencodeAgent(): String = SweepSettings.getInstance().opencodeAgent
+
+    fun updateOpencodeAgent(agent: String) {
+        SweepSettings.getInstance().opencodeAgent = agent
+    }
+
+    fun getCodexCommand(): String = SweepSettings.getInstance().codexCommand
+
+    fun updateCodexCommand(command: String) {
+        SweepSettings.getInstance().codexCommand = command
+    }
+
+    fun getCodexExtraArgs(): String = SweepSettings.getInstance().codexExtraArgs
+
+    fun updateCodexExtraArgs(args: String) {
+        SweepSettings.getInstance().codexExtraArgs = args
+    }
+
+    fun getCodexModel(): String = SweepSettings.getInstance().codexModel
+
+    fun updateCodexModel(model: String) {
+        SweepSettings.getInstance().codexModel = model
+    }
+
+    fun getCodexApprovalPolicy(): String = SweepSettings.getInstance().codexApprovalPolicy
+
+    fun updateCodexApprovalPolicy(policy: String) {
+        SweepSettings.getInstance().codexApprovalPolicy = policy
+    }
+
+    fun getCodexSandbox(): String = SweepSettings.getInstance().codexSandbox
+
+    fun updateCodexSandbox(sandbox: String) {
+        SweepSettings.getInstance().codexSandbox = sandbox
+    }
+
     // Autocomplete exclusion banner visibility
     fun isHideAutocompleteExclusionBanner(): Boolean = state.hideAutocompleteExclusionBanner
 

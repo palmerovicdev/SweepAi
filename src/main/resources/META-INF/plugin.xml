@@ -50,11 +50,19 @@
         <applicationService serviceImplementation="dev.sweep.assistant.settings.SweepSettings"/>
         <applicationService serviceImplementation="dev.sweep.assistant.settings.SweepMetaData"/>
         <applicationService serviceImplementation="dev.sweep.assistant.services.LocalAutocompleteServerManager"/>
+        <applicationService serviceImplementation="dev.sweep.assistant.api.external.ExternalAgentProviderRegistry"/>
+        <projectService serviceImplementation="dev.sweep.assistant.api.external.ExternalAgentSessionStoreImpl"/>
+        <projectService serviceImplementation="dev.sweep.assistant.api.external.ExternalAgentChatEngine"/>
         <projectConfigurable
                 groupId="tools"
                 displayName="Sweep"
                 id="dev.sweep.assistant.settings.SweepSettingsConfigurable"
                 instance="dev.sweep.assistant.settings.SweepSettingsConfigurable"/>
+        <projectConfigurable
+                parentId="dev.sweep.assistant.settings.SweepSettingsConfigurable"
+                displayName="Chat Provider"
+                id="dev.sweep.assistant.settings.SweepChatProviderConfigurable"
+                instance="dev.sweep.assistant.settings.SweepChatProviderConfigurable"/>
         <editorNotificationProvider implementation="dev.sweep.assistant.notifications.AutocompleteExclusionNotificationProvider"/>
         <statusBarWidgetFactory id="SweepAutocompleteStatus"
                                 implementation="dev.sweep.assistant.statusbar.AutocompleteStatusBarWidgetFactory"/>

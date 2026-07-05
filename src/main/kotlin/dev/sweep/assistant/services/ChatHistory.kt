@@ -464,12 +464,99 @@ class ChatHistory(
             )
             """.trimIndent()
 
+        val externalAgentSessionTable =
+            """
+            CREATE TABLE IF NOT EXISTS external_agent_session (
+                conversation_id   TEXT PRIMARY KEY,
+                provider_id       TEXT NOT NULL,
+                remote_session_id TEXT NOT NULL,
+                cwd               TEXT NOT NULL,
+                created_at        INTEGER NOT NULL
+            )
+            """.trimIndent()
+
         connection?.createStatement()?.use { stmt ->
             stmt.execute(conversationsTable)
             stmt.execute(conversationNamesTable)
             stmt.execute(fileContentsTable)
             // First drop the table, then recreate it
             stmt.execute(appliedCodeBlocksTable)
+            stmt.execute(externalAgentSessionTable)
+        }
+    }
+
+    // ===== External agent session store =====
+    //
+    // Mapping between a Sweep conversationId and its external agent's remote session
+    // (Codex thread id or OpenCode session id). One row per conversation.
+
+    data class ExternalAgentSessionRow(
+        val conversationId: String,
+        val providerId: String,
+        val remoteSessionId: String,
+        val cwd: String,
+        val createdAt: Long,
+    )
+
+    fun getExternalAgentSession(conversationId: String): ExternalAgentSessionRow? {
+        val sql =
+            """
+            SELECT conversation_id, provider_id, remote_session_id, cwd, created_at
+            FROM external_agent_session WHERE conversation_id = ?
+            """.trimIndent()
+        return try {
+            connection?.prepareStatement(sql)?.use { stmt ->
+                stmt.setString(1, conversationId)
+                stmt.executeQuery().use { rs ->
+                    if (rs.next()) {
+                        ExternalAgentSessionRow(
+                            conversationId = rs.getString("conversation_id"),
+                            providerId = rs.getString("provider_id"),
+                            remoteSessionId = rs.getString("remote_session_id"),
+                            cwd = rs.getString("cwd"),
+                            createdAt = rs.getLong("created_at"),
+                        )
+                    } else {
+                        null
+                    }
+                }
+            }
+        } catch (e: SQLException) {
+            logger.warn("Failed to retrieve external agent session: $conversationId", e)
+            null
+        }
+    }
+
+    fun putExternalAgentSession(row: ExternalAgentSessionRow) {
+        val sql =
+            """
+            INSERT OR REPLACE INTO external_agent_session
+                (conversation_id, provider_id, remote_session_id, cwd, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """.trimIndent()
+        try {
+            connection?.prepareStatement(sql)?.use { stmt ->
+                stmt.setString(1, row.conversationId)
+                stmt.setString(2, row.providerId)
+                stmt.setString(3, row.remoteSessionId)
+                stmt.setString(4, row.cwd)
+                stmt.setLong(5, row.createdAt)
+                stmt.executeUpdate()
+            }
+        } catch (e: SQLException) {
+            logger.error("Failed to save external agent session: ${row.conversationId}", e)
+        }
+    }
+
+    fun deleteExternalAgentSession(conversationId: String) {
+        val sql = "DELETE FROM external_agent_session WHERE conversation_id = ?"
+        try {
+            connection?.prepareStatement(sql)?.use { stmt ->
+                stmt.setString(1, conversationId)
+                stmt.executeUpdate()
+            }
+        } catch (e: SQLException) {
+            logger.warn("Failed to delete external agent session: $conversationId", e)
         }
     }
 
@@ -765,6 +852,7 @@ class ChatHistory(
                 stmt.setString(1, conversationId)
                 stmt.executeUpdate()
             }
+            deleteExternalAgentSession(conversationId)
         } catch (e: SQLException) {
             logger.error("Failed to delete conversation: $conversationId", e)
         }

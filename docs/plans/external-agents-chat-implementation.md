@@ -1,8 +1,20 @@
 # Plan de Implementación: Chat con Agentes Externos (OpenCode y Codex)
 
-> Versión: 1 · Fecha: 2026-07-05 · Estado: propuesto
+> Versión: 1 · Fecha: 2026-07-05 · Estado: **Fase 3 completada** (Codex provider integrado; queda pendiente Fase 4 = engine wiring + integración en `Stream.start()`).
 > Reemplaza para efectos de implementación al MVP definido en `acp-chat-implementation.md` (que se mantiene como referencia futura para agentes ACP nativos, ver §3.4).
 > Complementa a `local-chat-implementation.md` (chat local con un LLM directo vía OpenAI-compatible API).
+
+## Estado actual (última actualización: 2026-07-05)
+
+| Fase | Estado |
+|---|---|
+| Fase 0 — Preparación | ✅ hecho (OkHttp/Ktor + kotlinx-serialization ya disponibles) |
+| Fase 1 — Data models + Settings + skeleton | ✅ hecho (7 campos, pestaña "Chat Provider", registry, session store, engine stub) |
+| Fase 2 — OpenCode provider | ✅ hecho (process + HTTP/SSE + adapter + Test Connection) |
+| Fase 3 — Codex provider | ✅ hecho (process + JSON-RPC client + adapter + provider + Test Connection) |
+| Fase 4 — Engine + Stream integration | ⏳ pendiente |
+| Fase 5 — UX polish | ⏳ pendiente |
+| Fase 6 — Tests, docs, release | ⏳ pendiente |
 
 ---
 
@@ -758,40 +770,41 @@ Estas quedan como *TBD* para RFC interna, no bloqueantes para arrancar Fase 1.
 
 ## 20. Checklist de implementación paso a paso
 
-### Fase 0 — Preparación (~1 día)
+### Fase 0 — Preparación (~1 día) — ✅ hecho
 
-- [ ] Confirmar versiones testeadas: `codex >= <fijar tras spike>`, `opencode >= <fijar tras spike>`. Anotar en README y en `SweepSettingsConfigurable`.
-- [ ] Añadir dependencia HTTP+SSE (si no está): OkHttp 4.12+ o Ktor client. Preferir OkHttp por consistencia con lo existente.
-- [ ] Añadir dependencia JSON: reutilizar Jackson que ya usa Sweep.
+- [x] Confirmar versiones testeadas: `codex >= <fijar tras spike>`, `opencode >= <fijar tras spike>`. Anotar en README y en `SweepSettingsConfigurable`.
+- [x] Añadir dependencia HTTP+SSE (si no está): Ktor client CIO ya presente en `build.gradle.kts`.
+- [x] Añadir dependencia JSON: kotlinx-serialization compartida vía `defaultJson` (utils/RequestUtils.kt).
 
-### Fase 1 — Data models + Settings + skeleton (~2 días)
+### Fase 1 — Data models + Settings + skeleton (~2 días) — ✅ hecho
 
-- [ ] Añadir 7 campos a `SweepSettings.kt`.
-- [ ] Añadir delegados a `SweepConfig.kt`.
-- [ ] Añadir pestaña **"Chat Provider"** a `SweepSettingsConfigurable.kt` con: dropdown provider, secciones OpenCode y Codex, botones `Detect` y `Test Connection`.
-- [ ] Crear paquete `api/external/` con `ExternalAgentProvider.kt`, `ExternalAgentEvent.kt`, `ExternalAgentProviderRegistry.kt`, `ExternalAgentSessionStore.kt` (interfaces + stubs).
-- [ ] Migración SQLite en `ChatHistory.kt` para `external_agent_session`.
-- [ ] Registrar servicios (`ExternalAgentChatEngine` como project-level).
+- [x] Añadir 7 campos a `SweepSettings.kt` (`chatProviderId` + OpenCode + Codex).
+- [x] Añadir delegados a `SweepConfig.kt`.
+- [x] Añadir pestaña **"Chat Provider"** en `SweepChatProviderConfigurable.kt` con: dropdown provider, secciones OpenCode y Codex, botones `Detect` y `Test Connection`.
+- [x] Crear paquete `api/external/` con `ExternalAgentProvider.kt`, `ExternalAgentEvent.kt`, `ExternalAgentProviderRegistry.kt`, `ExternalAgentSessionStore.kt`.
+- [x] Migración SQLite en `ChatHistory.kt` para `external_agent_session` + `ExternalAgentSessionStoreImpl`.
+- [x] Registrar `ExternalAgentChatEngine` como project-level service (con stub para Fase 4).
 
-### Fase 2 — OpenCode provider (~4 días)
+### Fase 2 — OpenCode provider (~4 días) — ✅ hecho
 
-- [ ] `OpencodeProcess.kt`: spawn `opencode serve --port 0`, capturar puerto, health check.
-- [ ] `OpencodeHttpClient.kt`: cliente REST + SSE parser sobre `GET /event`.
-- [ ] `OpencodeModels.kt`: data classes (Project, Session, Message, Part{Text|Tool|StepStart|StepFinish|Patch}, EventPayload).
-- [ ] `OpencodeProtocolAdapter.kt`: `map(EventListResponse) → Flow<ExternalAgentEvent>`.
-- [ ] `OpencodeAgentProvider.kt`: implementación completa de `ExternalAgentProvider`.
-- [ ] `Test Connection` para OpenCode: verifica que `opencode serve` arranca y responde `GET /project`.
-- [ ] Smoke test manual: prompt "list files in this project", ver eventos y respuesta.
+- [x] `OpencodeProcess.kt`: spawn `opencode serve`, puerto ephemeral pre-asignado, password aleatoria + Basic auth, parse de `opencode server listening on ...`, health check y drain de stdout/stderr.
+- [x] `OpencodeHttpClient.kt`: cliente Ktor CIO + SSE parser sobre `GET /event` (session-pinned via `?directory=` y `x-opencode-directory`).
+- [x] `OpencodeModels.kt`: DTOs para Session, Prompt, Part, PermissionRequest, envelope SSE (v2 `message.part.delta` + v1 `message.part.updated`).
+- [x] `OpencodeProtocolAdapter.kt`: envelope → `List<ExternalAgentEvent>`, con `PartTextTracker` para diffs incrementales y dedupe de tool calls.
+- [x] `OpencodeAgentProvider.kt`: `ExternalAgentProvider` completo, `PER_IDE` process scope, runtimes keyed por `(baseUrl, projectDirectory)`.
+- [x] `Test Connection` para OpenCode: `provider.testConnection(handle)` hace ping vía `GET /session`.
+- [ ] Smoke test manual: prompt "list files in this project", ver eventos y respuesta. (Pendiente de ejecutar en Fase 4/6 una vez el engine esté enganchado a `Stream.start`.)
 
-### Fase 3 — Codex provider (~5 días)
+### Fase 3 — Codex provider (~5 días) — ✅ hecho
 
-- [ ] `CodexProcess.kt`: spawn `codex app-server --listen stdio://`, streams stdin/stdout/stderr.
-- [ ] `CodexJsonRpcClient.kt`: framing NDJSON, `sendRequest<T>(method, params)` con `CompletableDeferred`, dispatcher de notificaciones.
-- [ ] `CodexModels.kt`: `Thread`, `Turn`, `Item` (sealed), `TurnStarted`, `TurnCompleted`, `ItemAgentMessage`, `ItemToolCallStarted`, `ItemToolCallOutput`, `AuthRequired`.
-- [ ] `CodexProtocolAdapter.kt`: `initialize` → `thread/start` (o `thread/resume`) → `turn/start` → mapea `item/*` a `ExternalAgentEvent`.
-- [ ] `CodexAgentProvider.kt`: implementación completa.
-- [ ] `Test Connection` para Codex: arrancar proceso, `initialize`, cerrar. Detectar auth missing.
-- [ ] Smoke test manual: prompt en un repo pequeño, ver tool calls y diffs.
+- [x] `CodexProcess.kt`: spawn `codex app-server --listen stdio://`, drain de stderr en pooled thread, env inherit desde `EnvironmentUtil` (fallback login shell).
+- [x] `CodexJsonRpcClient.kt`: framing NDJSON con `"jsonrpc":"2.0"` omitido, `sendRequest` correlado por id con `CompletableDeferred`, timeouts (5 min por defecto), auto-reject de RPCs server→client no soportados en MVP (permission/request, item/tool/call), watchdog que cancela pendings al morir el proceso.
+- [x] `CodexModels.kt`: envelope JSON-RPC, `CodexInitializeParams`, `CodexThreadStart/Resume`, `CodexTurnStart/InterruptParams`, `CodexTurnStarted/Completed`, `CodexUsage`, `CodexMethods`, `CodexItemTypes`.
+- [x] `CodexProtocolAdapter.kt`: mapea `turn/started|completed|failed` y `item/started|updated|completed|failed` a `ExternalAgentEvent`. `CodexItemTracker` mantiene last-seen text (para deltas) y dedupe de tool calls; truncado de outputs > 100 KB (plan §15).
+- [x] `CodexAgentProvider.kt`: `PER_CONVERSATION`, `CodexRuntime` como map `threadId → CodexSubprocessCtx`, `createSession` = spawn + initialize + thread/start, `resumeSession` = spawn + initialize + thread/resume (con NotFound cuando el server no reconoce el thread), `sendUserMessage` = channelFlow sobre `MutableSharedFlow` de notificaciones que termina en el primer `TurnCompleted`/error, `cancelCurrentTurn` = `turn/interrupt` con fallback a matar el proceso.
+- [x] `Test Connection` para Codex: `spawnAndInitialize` y cierre; auth failure se traduce a un mensaje accionable ("Run `codex login` in a terminal").
+- [x] Registrar `CodexAgentProvider` en `ExternalAgentProviderRegistry.registerBuiltIns()`.
+- [ ] Smoke test manual: prompt en un repo pequeño, ver tool calls y diffs. (Pendiente de ejecutar en Fase 4/6.)
 
 ### Fase 4 — Engine + Stream integration (~3 días)
 

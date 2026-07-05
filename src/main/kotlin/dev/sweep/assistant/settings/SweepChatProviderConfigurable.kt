@@ -1,5 +1,6 @@
 package dev.sweep.assistant.settings
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
@@ -8,7 +9,10 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import dev.sweep.assistant.api.external.ExternalAgentProviderRegistry
+import dev.sweep.assistant.api.external.TestResult
 import dev.sweep.assistant.components.SweepConfig
+import dev.sweep.assistant.settings.SweepSettings
+import kotlinx.coroutines.runBlocking
 import java.awt.Dimension
 import javax.swing.BoxLayout
 import javax.swing.JButton
@@ -184,7 +188,7 @@ class SweepChatProviderConfigurable(
         val statusLabel = if (providerId == OPENCODE_ID) opencodeStatusLabel else codexStatusLabel
         val commandField = if (providerId == OPENCODE_ID) opencodeCommandField else codexCommandField
         if (provider == null) {
-            statusLabel.text = "Provider not yet available (Fase ${if (providerId == OPENCODE_ID) 2 else 3})"
+            statusLabel.text = "Provider not registered (unexpected — please report)"
             statusLabel.foreground = JBColor.GRAY
             return
         }
@@ -204,13 +208,43 @@ class SweepChatProviderConfigurable(
         val registry = ExternalAgentProviderRegistry.getInstance()
         val provider = registry.resolve(providerId)
         if (provider == null) {
-            statusLabel.text = "Provider not yet available (Fase ${if (providerId == OPENCODE_ID) 2 else 3})"
+            statusLabel.text = "Provider not registered (unexpected — please report)"
             statusLabel.foreground = JBColor.GRAY
             return
         }
-        // Real connection test lands with the provider implementation (Fase 2 / Fase 3).
-        statusLabel.text = "Test not yet wired — implement provider.testConnection() first"
+
+        // Persist the fields the user just typed before the test spawns a
+        // subprocess against them — otherwise "Test" reads stale settings.
+        try {
+            apply()
+        } catch (_: Exception) {
+        }
+
+        statusLabel.text = "Testing…"
         statusLabel.foreground = JBColor.GRAY
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = try {
+                runBlocking {
+                    val handle = provider.ensureRunning(project, SweepSettings.getInstance())
+                    provider.testConnection(handle)
+                }
+            } catch (e: Exception) {
+                TestResult.Fail(e.message ?: e.javaClass.simpleName)
+            }
+            ApplicationManager.getApplication().invokeLater {
+                when (result) {
+                    is TestResult.Ok -> {
+                        statusLabel.text = "Connected — ${result.details}"
+                        statusLabel.foreground = JBColor(java.awt.Color(0, 128, 0), java.awt.Color(80, 200, 80))
+                    }
+                    is TestResult.Fail -> {
+                        statusLabel.text = "Failed: ${result.reason.take(200)}"
+                        statusLabel.foreground = JBColor.RED
+                    }
+                }
+            }
+        }
     }
 
     override fun isModified(): Boolean {

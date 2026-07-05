@@ -40,14 +40,11 @@ class ExternalAgentProviderRegistry {
     }
 
     /**
-     * Fase 1 skeleton — real implementations arrive in Fase 2 (OpenCode) and
-     * Fase 3 (Codex). This method is intentionally empty; when providers land,
-     * add:
-     *   register(OpencodeAgentProvider())
-     *   register(CodexAgentProvider())
+     * OpenCode landed in Fase 2; Codex landed in Fase 3.
      */
     private fun registerBuiltIns() {
-        // no-op until Fase 2 / Fase 3
+        register(dev.sweep.assistant.api.external.opencode.OpencodeAgentProvider())
+        register(dev.sweep.assistant.api.external.codex.CodexAgentProvider())
     }
 
     companion object {

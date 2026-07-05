@@ -40,11 +40,13 @@ class ExternalAgentProviderRegistry {
     }
 
     /**
-     * OpenCode landed in Fase 2; Codex landed in Fase 3.
+     * v1.30 migrated both providers to a shared Node.js sidecar that speaks the
+     * official `@openai/codex-sdk` and `@opencode-ai/sdk` npm packages. See
+     * `docs/plans/humming-waddling-ritchie.md`.
      */
     private fun registerBuiltIns() {
-        register(dev.sweep.assistant.api.external.opencode.OpencodeAgentProvider())
-        register(dev.sweep.assistant.api.external.codex.CodexAgentProvider())
+        register(dev.sweep.assistant.api.external.bridge.OpencodeBridgeProvider())
+        register(dev.sweep.assistant.api.external.bridge.CodexBridgeProvider())
     }
 
     companion object {

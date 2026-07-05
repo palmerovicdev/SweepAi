@@ -1116,6 +1116,12 @@ class SweepConfig(
         SweepSettings.getInstance().opencodeAgent = agent
     }
 
+    fun getOpencodeModel(): String = SweepSettings.getInstance().opencodeModel
+
+    fun updateOpencodeModel(model: String) {
+        SweepSettings.getInstance().opencodeModel = model
+    }
+
     fun getCodexCommand(): String = SweepSettings.getInstance().codexCommand
 
     fun updateCodexCommand(command: String) {
@@ -1156,6 +1162,24 @@ class SweepConfig(
 
     fun updateCodexThinking(thinking: String) {
         SweepSettings.getInstance().codexThinking = thinking
+    }
+
+    fun getAiBridgeNodePath(): String = SweepSettings.getInstance().aiBridgeNodePath
+
+    fun updateAiBridgeNodePath(path: String) {
+        SweepSettings.getInstance().aiBridgeNodePath = path
+    }
+
+    fun getCodexSdkVersion(): String = SweepSettings.getInstance().codexSdkVersion
+
+    fun updateCodexSdkVersion(spec: String) {
+        SweepSettings.getInstance().codexSdkVersion = spec
+    }
+
+    fun getOpencodeSdkVersion(): String = SweepSettings.getInstance().opencodeSdkVersion
+
+    fun updateOpencodeSdkVersion(spec: String) {
+        SweepSettings.getInstance().opencodeSdkVersion = spec
     }
 
     // Autocomplete exclusion banner visibility

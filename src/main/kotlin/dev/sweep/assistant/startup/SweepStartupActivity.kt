@@ -179,6 +179,27 @@ class SweepStartupActivity :
         // Initialize application-level services
         RipgrepManager.getInstance() // Initialize ripgrep manager on startup
 
+        // Warm-start the Node.js bridge so the first Codex/OpenCode message
+        // doesn't pay the spawn+import() latency. Runs on a pooled thread so
+        // it never blocks IDE startup; failures are surfaced later via the
+        // status label in Settings → Chat Provider.
+        //
+        // warmStart() → ensureRunning() → SdkManager.ensureInstalledIfMissingBlocking,
+        // so if node_modules is empty (first run) we do the npm install here
+        // instead of dumping a "SDK not installed" error on the user's first
+        // message. The install runs entirely on this pooled thread.
+        val chatProviderId = SweepSettings.getInstance().chatProviderId
+        if (chatProviderId == "codex" || chatProviderId == "opencode") {
+            AppExecutorUtil.getAppExecutorService().submit {
+                try {
+                    dev.sweep.assistant.api.external.bridge.NodeBridgeClient.getInstance().warmStart()
+                } catch (e: Throwable) {
+                    Logger.getInstance(SweepStartupActivity::class.java)
+                        .warn("Failed to warm-start ai-bridge", e)
+                }
+            }
+        }
+
         // Initialize project-level services
         SweepProjectService.getInstance(project)
         FeatureFlagService.getInstance(project)

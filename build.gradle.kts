@@ -18,7 +18,7 @@ val pluginId = "dev.sweep.assistant"
 val pluginName = "Sweep Self-Hosted"
 println("Building plugin: $pluginName with ID: $pluginId")
 group = "dev.sweep"
-version = "1.29.5"
+version = "1.30.1"
 
 intellijPlatform {
     autoReload.set(false) // this triggers unloading which is very annoying
@@ -94,6 +94,21 @@ tasks {
         token.set(System.getenv("PUBLISH_TOKEN"))
     }
 
+    // Pack the Node.js sidecar (ai-bridge/*) into a single zip that gets shipped
+    // as a plugin resource. Extraction to disk + `npm install` happens at
+    // runtime via NodeDaemonManager.
+    val packAiBridge by registering(Zip::class) {
+        // Explicitly enumerate what ships — safer than a broad `from` because
+        // ai-bridge/ can contain locally-installed node_modules/ or stray files
+        // during dev-loop that would otherwise leak into the plugin JAR.
+        from("ai-bridge/package.json")
+        from("ai-bridge/daemon.js")
+        from("ai-bridge/channels") { into("channels") }
+        from("ai-bridge/utils") { into("utils") }
+        archiveFileName.set("ai-bridge.zip")
+        destinationDirectory.set(layout.buildDirectory.dir("generated/ai-bridge"))
+    }
+
     processResources {
         // Set duplicate strategy for all files
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
@@ -102,6 +117,10 @@ tasks {
         from("src/main/resources") {
             include("tools/**")
         }
+
+        // Sidecar zip lives at the JAR root so `getResourceAsStream("/ai-bridge.zip")` finds it.
+        dependsOn(packAiBridge)
+        from(packAiBridge.get().destinationDirectory)
     }
 
     processTestResources {
@@ -125,9 +144,26 @@ tasks {
         }
     }
 
+    // Make the ai-bridge sidecar discoverable during `runIde` — the sandbox JAR
+    // is built from processResources output, so this just guarantees the file
+    // is present in the plugin's classes/ dir where getResourceAsStream("/ai-bridge.zip")
+    // can find it.
+    val copyAiBridgeToSandbox by registering(Copy::class) {
+        dependsOn(packAiBridge)
+        val sandboxPluginDir =
+            layout.buildDirectory
+                .dir("idea-sandbox/plugins/${project.name}")
+        from(packAiBridge.get().destinationDirectory)
+        into(sandboxPluginDir.map { it.dir("classes") })
+        doLast {
+            println("Copied ai-bridge.zip to sandbox classes/")
+        }
+    }
+
     // Hook the copy task to prepareSandbox
     prepareSandbox {
         finalizedBy(copyRipgrepToSandbox)
+        finalizedBy(copyAiBridgeToSandbox)
     }
 
     withType<Jar> {
@@ -151,6 +187,10 @@ tasks {
             include("tools/ripgrep/**")
             into("lib/tools")
         }
+
+        // Ship the ai-bridge sidecar zip alongside the plugin JAR — the
+        // classloader resolves `/ai-bridge.zip` from processResources output.
+        dependsOn(packAiBridge)
     }
 
     runIde {

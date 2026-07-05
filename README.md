@@ -4,19 +4,39 @@ And then download required packages.
 
 ## External Agent Chat (OpenCode / Codex)
 
-The chat can delegate a conversation to an external CLI agent instead of the
+The chat can delegate a conversation to an external agent instead of the
 Sweep cloud backend. Configure it under **Settings → Sweep AI → Chat Provider**
 by picking:
 
-- **OpenCode** — spawns `opencode serve` locally (or points at an existing base
-  URL) and talks HTTP + SSE. Authenticate once with `opencode auth login <provider>`
-  in a terminal.
-- **Codex** — spawns `codex app-server --listen stdio://` per conversation and
-  talks JSON-RPC 2.0 over stdio. Authenticate once with `codex login` in a
-  terminal.
+- **Codex** — powered by [`@openai/codex-sdk`](https://www.npmjs.com/package/@openai/codex-sdk). Authenticate once with `codex login` in a terminal.
+- **OpenCode** — powered by [`@opencode-ai/sdk`](https://www.npmjs.com/package/@opencode-ai/sdk). Authenticate once with `opencode auth login <provider>` in a terminal.
+
+Both providers run inside a bundled Node.js sidecar (`ai-bridge`). On first use
+the plugin extracts the sidecar to `${PLUGINS_DIR}/sweep-ai-bridge/<version>/`
+and installs the SDKs via `npm install --omit=dev`. Prerequisite: **Node.js 18+**
+on your machine; the plugin auto-detects it on PATH (including `nvm`, `volta`,
+`fnm`, `asdf` install locations) or you can pin an absolute path in the settings
+tab.
 
 The active provider fully owns the agent loop and its tools; Sweep observes tool
-calls with an "Executed by …" badge in the tooltip. See
+calls with an "Executed by …" badge in the tooltip. Chat toolbar exposes three
+provider-aware pills so you can flip provider / approval-or-agent / reasoning
+effort mid-conversation without a restart — pill changes are propagated to the
+daemon on the next message.
+
+### Managing SDK versions
+
+Under **Settings → Sweep AI → Chat Provider → SDK dependencies** you can:
+
+- See the installed version of each SDK.
+- Pin a specific semver spec (`latest`, `^0.5.0`, `0.5.2`, …).
+- Click **Update all** to pull the latest versions.
+- Click **Reinstall from scratch** to wipe `node_modules/` and reinstall clean.
+
+`npm install` runs in the background with a live log; the bridge daemon is
+restarted automatically when the install completes.
+
+See `docs/plans/humming-waddling-ritchie.md` and
 `docs/plans/external-agents-chat-implementation.md` for the full architecture.
 
 ## Customizing Autocomplete Keystrokes

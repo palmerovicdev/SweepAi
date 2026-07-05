@@ -297,6 +297,18 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
                 field = value
             }
         }
+    // OpenCode model in `providerID/modelID` shape; empty = let the OpenCode
+    // server pick its default. Kept separate from `codexModel` because the
+    // two providers accept different model-id conventions.
+    var opencodeModel: String = ""
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
     // "never" | "on-request" | "on-failure" | "untrusted"
     var codexApprovalPolicy: String = "on-request"
         set(value) {
@@ -339,6 +351,46 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
                 field = value
             }
         }
+
+    // Absolute path to node executable; empty = auto-detect via NodeDetector.
+    var aiBridgeNodePath: String = ""
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    // npm spec used when installing @openai/codex-sdk inside the ai-bridge dir.
+    // Pinned to a specific reviewed version so a compromised `latest` release
+    // does not silently ship RCE inside the daemon. Users can widen this to
+    // "latest" or any semver spec via Settings → Chat Provider.
+    var codexSdkVersion: String = "0.142.5"
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    // npm spec used when installing @opencode-ai/sdk inside the ai-bridge dir.
+    // See [codexSdkVersion] for the pinning rationale.
+    var opencodeSdkVersion: String = "1.17.13"
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+
+    // Toggled to true by SdkManager after a successful `npm install`. Used by
+    // [hasBeenSet] so selecting `chatProviderId=codex/opencode` alone does not
+    // short-circuit the onboarding flow until the bridge is actually usable.
+    var bridgeSdksInstalled: Boolean = false
 
     fun ensureDefaultPromptsInitialized() {
         var addedPrompt = false
@@ -393,12 +445,13 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
      * Determines if the user has configured Sweep settings if either:
      * 1. Both GitHub token and base URL have been set to non-default values, OR
      * 2. An Anthropic API key has been provided, OR
-     * 3. An external chat provider (OpenCode / Codex) is selected — the user
-     *    delegated the chat backend and doesn't need Sweep Cloud credentials.
+     * 3. An external chat provider (OpenCode / Codex) is selected AND its
+     *    SDKs have actually been installed — merely picking the provider is
+     *    not enough, because the bridge would still fail on first send.
      */
     val hasBeenSet: Boolean
         get() {
-            if (chatProviderId in setOf("opencode", "codex")) return true
+            if (chatProviderId in setOf("opencode", "codex") && bridgeSdksInstalled) return true
             return if (SweepSettingsParser.isCloudEnvironment()) {
                 githubToken != DEFAULT_GITHUB_TOKEN
             } else {

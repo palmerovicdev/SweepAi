@@ -20,9 +20,10 @@
 <ul>
   <li><b>New</b>
     <ul>
-        <li>The <b>Sweep AI</b> tool window is now registered — a chat button appears in the tool window bars.</li>
-        <li>Chat Provider settings expose <b>Model</b>, <b>Approval</b>, <b>Sandbox</b>, <b>Reasoning effort</b> and <b>Thinking mode</b> as dropdowns rather than free-text fields.</li>
-        <li>Chat can now delegate a conversation to an <b>external CLI agent</b>: <b>OpenCode</b> (HTTP + SSE against <code>opencode serve</code>) or <b>Codex</b> (JSON-RPC 2.0 over stdio against <code>codex app-server</code>). Select the provider in Settings &rarr; Sweep AI &rarr; Chat Provider. The agent owns the tool loop; Sweep observes tool calls with an "Executed by &hellip;" badge.</li>
+        <li>Codex and OpenCode chat providers migrated to the official <code>@openai/codex-sdk</code> and <code>@opencode-ai/sdk</code> npm packages via a bundled Node.js sidecar (<code>ai-bridge</code>). Cold-start is warm-started at project open so the first prompt does not pay the spawn latency.</li>
+        <li>New "SDK dependencies" panel in Settings &rarr; Sweep AI &rarr; Chat Provider — installed SDK versions are visible; <b>Update all</b> and <b>Reinstall from scratch</b> buttons run <code>npm install</code> in the bridge dir with a live log.</li>
+        <li>Chat toolbar now has three provider-aware pills: <b>provider selector</b> (Codex ▾ / OpenCode ▾), <b>mode</b> pill that shows approval policy (Codex) or agent profile (OpenCode), and <b>reasoning effort</b> pill (Codex). Every pill updates the daemon in real time from <code>SweepSettings</code>; no restart between messages.</li>
+        <li>The <b>Sweep AI</b> tool window is registered — a chat button appears in the tool window bars.</li>
         <li>Plugin renamed to <b>Sweep Self-Hosted</b> for self-hosted installations.</li>
         <li>Local autocomplete now supports an <b>MLX (Apple Silicon)</b> backend in addition to llama.cpp. Configure it in Settings &rarr; Sweep Autocomplete.</li>
         <li>Model repository is now configurable per backend.</li>
@@ -31,6 +32,7 @@
   <li><b>Bug Fixes and Improvements</b>
     <ul>
         <li>"Test Connection" for Codex and OpenCode no longer hangs indefinitely; it enforces per-step and overall timeouts and always reports back.</li>
+        <li>Node.js executable can be pinned in Settings when the default PATH detection misses (nvm / volta / fnm / asdf are also probed).</li>
     </ul>
   </li>
 </ul>
@@ -64,6 +66,9 @@
         <applicationService serviceImplementation="dev.sweep.assistant.settings.SweepMetaData"/>
         <applicationService serviceImplementation="dev.sweep.assistant.services.LocalAutocompleteServerManager"/>
         <applicationService serviceImplementation="dev.sweep.assistant.api.external.ExternalAgentProviderRegistry"/>
+        <applicationService serviceImplementation="dev.sweep.assistant.api.external.bridge.NodeDaemonManager"/>
+        <applicationService serviceImplementation="dev.sweep.assistant.api.external.bridge.NodeBridgeClient"/>
+        <applicationService serviceImplementation="dev.sweep.assistant.api.external.bridge.SdkManager"/>
         <projectService serviceImplementation="dev.sweep.assistant.api.external.ExternalAgentSessionStoreImpl"/>
         <projectService serviceImplementation="dev.sweep.assistant.api.external.ExternalAgentChatEngine"/>
         <projectConfigurable

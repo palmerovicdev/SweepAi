@@ -77,6 +77,8 @@ class ChatComponent(
     private var pendingChangesBanner: PendingChangesBanner? = null
     private var queuedMessagePanel: QueuedMessagePanel? = null
     private var externalAgentQuickSettings: dev.sweep.assistant.views.ExternalAgentQuickSettings? = null
+    private var agentProviderModePicker: dev.sweep.assistant.views.AgentProviderModePicker? = null
+    private var reasoningEffortPickerMenu: dev.sweep.assistant.views.ReasoningEffortPickerMenu? = null
 
     private var textFieldKeyListener: KeyPressedAdapter? = null
     private var textFieldDocumentListener: javax.swing.event.DocumentListener? = null
@@ -495,21 +497,40 @@ class ChatComponent(
                                                     setAvailableOptions(SweepConstants.CHAT_MODES)
                                                 }
 
-                                            // Quick-pick widget for external agent providers (Codex/OpenCode).
-                                            // Hidden when the chat is on Sweep Cloud / Local, appears with
-                                            // provider label + gear popup when switched to an external agent.
+                                            // External-provider pill row: provider selector, approval/agent-profile
+                                            // (mode slot), and reasoning effort (Codex only). All three toggle
+                                            // their visibility from `SweepSettings.chatProviderId`; the shared
+                                            // handler below re-hydrates them whenever any settings change.
                                             externalAgentQuickSettings =
-                                                dev.sweep.assistant.views.ExternalAgentQuickSettings(project)
-                                            externalAgentQuickSettings?.let { widget ->
-                                                project.messageBus.connect(this@ChatComponent).subscribe(
-                                                    dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier.TOPIC,
-                                                    dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier {
-                                                        ApplicationManager.getApplication().invokeLater {
-                                                            widget.refresh()
-                                                        }
-                                                    },
-                                                )
-                                            }
+                                                dev.sweep.assistant.views.ExternalAgentQuickSettings(project, this@ChatComponent)
+                                            agentProviderModePicker =
+                                                dev.sweep.assistant.views.AgentProviderModePicker(project, this@ChatComponent)
+                                            reasoningEffortPickerMenu =
+                                                dev.sweep.assistant.views.ReasoningEffortPickerMenu(project, this@ChatComponent)
+
+                                            project.messageBus.connect(this@ChatComponent).subscribe(
+                                                dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier.TOPIC,
+                                                dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier {
+                                                    ApplicationManager.getApplication().invokeLater {
+                                                        val pid = dev.sweep.assistant.settings.SweepSettings.getInstance().chatProviderId
+                                                        val external = pid == "codex" || pid == "opencode"
+                                                        // External providers replace both the mode selector
+                                                        // ("Agent") and the model picker ("Auto"): approval
+                                                        // policy / agent profile owns the mode slot, and each
+                                                        // provider has its own model dropdown in Settings.
+                                                        modeToggle?.isVisible = !external
+                                                        modelPicker.isVisible = !external
+                                                        externalAgentQuickSettings?.refresh()
+                                                        agentProviderModePicker?.refresh()
+                                                        reasoningEffortPickerMenu?.refresh()
+                                                    }
+                                                },
+                                            )
+                                            // Apply initial visibility (equivalent to the notifier body above).
+                                            val initialPid = dev.sweep.assistant.settings.SweepSettings.getInstance().chatProviderId
+                                            val initialExternal = initialPid == "codex" || initialPid == "opencode"
+                                            modeToggle?.isVisible = !initialExternal
+                                            modelPicker.isVisible = !initialExternal
 
                                             // Create a left container for the model picker and mode toggle
                                             val leftContainer =
@@ -518,7 +539,9 @@ class ChatComponent(
                                                     border = JBUI.Borders.empty() // Remove any default padding
                                                     isOpaque = true // Ensure opacity is consistent
                                                     add(modeToggle)
+                                                    agentProviderModePicker?.let { add(it) }
                                                     add(modelPickerContainer)
+                                                    reasoningEffortPickerMenu?.let { add(it) }
                                                     externalAgentQuickSettings?.let { add(it) }
                                                 }
                                             add(leftContainer, BorderLayout.WEST)
@@ -1208,12 +1231,16 @@ class ChatComponent(
         }
         suggestionPulser?.stop()
 
+        // External chat providers replace both these pills — respect that on reset.
+        val externalProvider = dev.sweep.assistant.settings.SweepSettings.getInstance()
+            .chatProviderId.let { it == "codex" || it == "opencode" }
+
         modelPicker.apply {
             parent?.parent?.background = SweepColors.transparent
             parent?.background = SweepColors.chatAndUserMessageBackground // important: this makes it invisible
             parent?.isFocusable = false
             background = SweepColors.transparent
-            isVisible = true
+            isVisible = !externalProvider
         }
 
         modeToggle?.apply {
@@ -1221,7 +1248,7 @@ class ChatComponent(
             parent?.background = SweepColors.chatAndUserMessageBackground // important: this makes it invisible
             parent?.isFocusable = false
             background = SweepColors.transparent
-            isVisible = true
+            isVisible = !externalProvider
 
             setAvailableOptions(
                 SweepConstants.CHAT_MODES,

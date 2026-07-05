@@ -106,8 +106,9 @@ class ExternalAgentChatEngine(
             return
         }
 
+        var currentRemoteSessionId = remoteSessionId
         val inFlightRecord =
-            InFlight(providerId = provider.id, provider = provider, handle = handle, remoteSessionId = remoteSessionId)
+            InFlight(providerId = provider.id, provider = provider, handle = handle, remoteSessionId = currentRemoteSessionId)
         inFlight[conversationId] = inFlightRecord
 
         val contentBuilder = StringBuilder()
@@ -120,9 +121,28 @@ class ExternalAgentChatEngine(
         onMessageUpdated(Message(MessageRole.ASSISTANT, ""))
 
         try {
-            val flow = provider.sendUserMessage(handle, remoteSessionId, prompt)
+            val flow = provider.sendUserMessage(handle, currentRemoteSessionId, prompt)
             flow.collect { event ->
                 when (event) {
+                    is ExternalAgentEvent.RemoteSessionIdUpdated -> {
+                        if (event.oldId == currentRemoteSessionId && event.newId != currentRemoteSessionId) {
+                            logger.info(
+                                "Remote session id for conv=$conversationId provider=${provider.id} " +
+                                    "remapped ${event.oldId} → ${event.newId}",
+                            )
+                            currentRemoteSessionId = event.newId
+                            sessionStore.put(
+                                ExternalSessionRow(
+                                    conversationId = conversationId,
+                                    providerId = provider.id,
+                                    remoteSessionId = event.newId,
+                                    cwd = cwd,
+                                    createdAt = System.currentTimeMillis(),
+                                ),
+                            )
+                            inFlight[conversationId] = inFlightRecord.copy(remoteSessionId = event.newId)
+                        }
+                    }
                     is ExternalAgentEvent.TextDelta -> {
                         when (event.kind) {
                             TextKind.CONTENT -> contentBuilder.append(event.delta)
@@ -165,7 +185,7 @@ class ExternalAgentChatEngine(
                     is ExternalAgentEvent.PermissionRequested -> {
                         val allowed = promptPermission(provider.displayName, event.toolName, event.args)
                         runCatching {
-                            provider.answerPermission(handle, remoteSessionId, event.permissionId, allow = allowed)
+                            provider.answerPermission(handle, currentRemoteSessionId, event.permissionId, allow = allowed)
                         }
                     }
                     is ExternalAgentEvent.Error -> {
@@ -331,7 +351,11 @@ class ExternalAgentChatEngine(
         val hints =
             SessionHints(
                 agent = if (provider.id == "opencode") settings.opencodeAgent.takeIf { it.isNotBlank() } else null,
-                model = if (provider.id == "codex") settings.codexModel.takeIf { it.isNotBlank() } else null,
+                model = when (provider.id) {
+                    "codex" -> settings.codexModel.takeIf { it.isNotBlank() }
+                    "opencode" -> settings.opencodeModel.takeIf { it.isNotBlank() }
+                    else -> null
+                },
             )
 
         val created =

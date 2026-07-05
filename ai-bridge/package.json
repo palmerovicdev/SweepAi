@@ -1,0 +1,15 @@
+{
+  "name": "sweep-ai-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Node.js sidecar that proxies Sweep AI to @openai/codex-sdk and @opencode-ai/sdk via NDJSON over stdio.",
+  "main": "daemon.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "0.142.5",
+    "@opencode-ai/sdk": "1.17.13"
+  }
+}

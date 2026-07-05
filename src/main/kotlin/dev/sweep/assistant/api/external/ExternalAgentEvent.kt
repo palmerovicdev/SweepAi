@@ -37,6 +37,15 @@ sealed interface ExternalAgentEvent {
         val reason: String,
         val recoverable: Boolean,
     ) : ExternalAgentEvent
+
+    // Emitted when the provider assigns a durable session id after the
+    // caller was handed a placeholder. Codex hands out a synthetic tempId at
+    // startThread and only mints the real thread_id during the first send —
+    // this event carries the mapping so the session store can be repointed.
+    data class RemoteSessionIdUpdated(
+        val oldId: String,
+        val newId: String,
+    ) : ExternalAgentEvent
 }
 
 enum class TextKind {

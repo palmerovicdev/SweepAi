@@ -41,6 +41,7 @@ class SweepSettingsConfigurable(
 
     private val enabledField = JBCheckBox("Enable autocomplete")
     private val localModeField = JBCheckBox("Use local autocomplete server")
+    private val autoStartField = JBCheckBox("Start server automatically when IDE starts")
     private val acceptWordField = JBCheckBox("Accept the next word with Right Arrow")
     private val showBadgeField = JBCheckBox("Show the Tab-to-accept badge")
     private val disableConflictsField = JBCheckBox("Disable conflicting autocomplete plugins automatically")
@@ -60,6 +61,10 @@ class SweepSettingsConfigurable(
     }
     private val mlxModelRepoField = JBTextField().apply {
         emptyText.text = "Cyanophyte/sweep-next-edit-v2-7B-mlx-8Bit"
+        columns = 32
+    }
+    private val mlxModelRevisionField = JBTextField().apply {
+        emptyText.text = "Commit hash (leave empty for latest)"
         columns = 32
     }
     private val externalUrlField = JBTextField().apply {
@@ -133,6 +138,7 @@ class SweepSettingsConfigurable(
                     .addSeparator()
                     .addComponent(JBLabel("Local server"))
                     .addComponent(localModeField)
+                    .addComponent(autoStartField)
                     .addComponent(managedRadio)
                     .addComponent(externalRadio)
                     .addComponent(managedPanel)
@@ -189,7 +195,15 @@ class SweepSettingsConfigurable(
             add(javax.swing.Box.createRigidArea(Dimension(8, 0)))
             add(mlxModelRepoField)
         }
+        val mlxRevisionRow = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            add(JBLabel("MLX Revision:"))
+            add(javax.swing.Box.createRigidArea(Dimension(8, 0)))
+            add(mlxModelRevisionField)
+        }
         mlxRow.add(mlxRepoRow)
+        mlxRow.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
+        mlxRow.add(mlxRevisionRow)
         mlxRow.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         mlxRow.add(mlxPlatformWarningLabel)
 
@@ -214,18 +228,14 @@ class SweepSettingsConfigurable(
         component?.repaint()
     }
 
-    private fun isAppleSilicon(): Boolean {
-        val os = System.getProperty("os.name").lowercase()
-        val arch = System.getProperty("os.arch").lowercase()
-        return os.contains("mac") && (arch == "aarch64" || arch == "arm64")
-    }
-
     private fun refreshMlxPlatformWarning() {
         val isMlx = backendCombo.selectedItem == BACKEND_MLX_LABEL
-        mlxPlatformWarningLabel.text = if (isMlx && !isAppleSilicon()) {
-            "MLX requires macOS on Apple Silicon. The managed server will refuse to start on this platform."
-        } else {
-            " "
+        mlxPlatformWarningLabel.text = when {
+            isMlx && !SweepSettings.isAppleSilicon() ->
+                "MLX requires macOS on Apple Silicon. The managed server will refuse to start on this platform."
+            isMlx && mlxModelRevisionField.text.isBlank() ->
+                "MLX Repo is community-maintained. Pin a commit hash in MLX Revision for supply-chain hardening."
+            else -> " "
         }
     }
 
@@ -269,6 +279,7 @@ class SweepSettingsConfigurable(
 
     private fun updateLocalControlsEnabled() {
         val localOn = localModeField.isSelected
+        autoStartField.isEnabled = localOn
         managedRadio.isEnabled = localOn
         externalRadio.isEnabled = localOn
         setPanelEnabled(managedPanel, localOn && managedRadio.isSelected)
@@ -339,6 +350,7 @@ class SweepSettingsConfigurable(
 
         return enabledField.isSelected != settings.nextEditPredictionFlagOn ||
             localModeField.isSelected != settings.autocompleteLocalMode ||
+            autoStartField.isSelected != settings.autoStartLocalServer ||
             acceptWordField.isSelected != settings.acceptWordOnRightArrow ||
             showBadgeField.isSelected != config.isShowAutocompleteBadge() ||
             disableConflictsField.isSelected != config.isDisableConflictingPluginsEnabled() ||
@@ -348,6 +360,7 @@ class SweepSettingsConfigurable(
             modelFilenameField.text.trim() != config.getAutocompleteLocalModelFilename() ||
             selectedBackendKey() != config.getAutocompleteBackend() ||
             mlxModelRepoField.text.trim() != config.getAutocompleteMlxModelRepo() ||
+            mlxModelRevisionField.text.trim() != config.getAutocompleteMlxModelRevision() ||
             externalUrlForCompare != config.getAutocompleteExternalUrl() ||
             exclusionPatterns() != config.getAutocompleteExclusionPatterns()
     }
@@ -358,25 +371,30 @@ class SweepSettingsConfigurable(
         val oldExternalUrl = settings.autocompleteExternalUrl
         val oldRepo = settings.autocompleteLocalModelRepo
         val oldFilename = settings.autocompleteLocalModelFilename
-        val oldBackend = settings.autocompleteBackend
-        val oldMlxRepo = settings.autocompleteMlxModelRepo
+        val oldAutoStart = settings.autoStartLocalServer
         val wasManaged = oldExternalUrl.isBlank()
 
-        // If MLX is selected on a platform that can't run it, don't persist the
-        // switch — otherwise the pool thread below would kill the running
-        // llama.cpp server and refuse to start MLX. Revert the combo so the UI
-        // reflects what was actually saved.
+        val oldBackend = settings.autocompleteBackend
+        val oldMlxRepo = settings.autocompleteMlxModelRepo
+        val oldMlxRevision = settings.autocompleteMlxModelRevision
+
+        // On non-Apple-Silicon we can't run MLX. Force llama.cpp regardless of
+        // whether the user is selecting MLX now or the stored value is already
+        // MLX (e.g., XML imported from a Mac) — otherwise stored state stays
+        // stuck on MLX and startup keeps failing.
         val selectedBackend = selectedBackendKey()
-        val effectiveBackend = if (selectedBackend == BACKEND_MLX_KEY && !isAppleSilicon()) {
+        val needsBackendRevert =
+            !SweepSettings.isAppleSilicon() &&
+                (selectedBackend == BACKEND_MLX_KEY || oldBackend == BACKEND_MLX_KEY)
+        if (needsBackendRevert) {
             backendCombo.selectedItem = BACKEND_LLAMACPP_LABEL
             updateBackendRowsVisibility()
             refreshMlxPlatformWarning()
-            oldBackend
-        } else {
-            selectedBackend
         }
+        val effectiveBackend = if (needsBackendRevert) BACKEND_LLAMACPP_KEY else selectedBackend
 
         settings.nextEditPredictionFlagOn = enabledField.isSelected
+        settings.autoStartLocalServer = autoStartField.isSelected
         settings.acceptWordOnRightArrow = acceptWordField.isSelected
         config.updateShowAutocompleteBadge(showBadgeField.isSelected)
         config.updateIsDisableConflictingPluginsEnabled(disableConflictsField.isSelected)
@@ -388,6 +406,7 @@ class SweepSettingsConfigurable(
         config.updateAutocompleteLocalModelFilename(modelFilenameField.text.trim())
         config.updateAutocompleteBackend(effectiveBackend)
         config.updateAutocompleteMlxModelRepo(mlxModelRepoField.text.trim())
+        config.updateAutocompleteMlxModelRevision(mlxModelRevisionField.text.trim())
 
         val externalUrlText = externalUrlField.text.trim()
         val newExternalUrl =
@@ -414,14 +433,20 @@ class SweepSettingsConfigurable(
                     val switchedFromExternal = wasLocalMode && !wasManaged
                     val backendChanged = newBackend != oldBackend
                     val modelChanged = when (newBackend) {
-                        BACKEND_MLX_KEY -> newMlxRepo != oldMlxRepo
+                        BACKEND_MLX_KEY -> newMlxRepo != oldMlxRepo || mlxModelRevisionField.text.trim() != oldMlxRevision
                         else -> newRepo != oldRepo || newFilename != oldFilename
                     }
                     val portChanged = newPort != oldPort
+                    // autoStart flipping ON while local mode was already on should
+                    // start the server now instead of waiting for the next IDE launch.
+                    val autoStartTurnedOn =
+                        wasLocalMode && !oldAutoStart && autoStartField.isSelected
                     if (!wasLocalMode || switchedFromExternal) {
                         manager.ensureServerRunning()
                     } else if (portChanged || modelChanged || backendChanged) {
                         manager.restartServer()
+                    } else if (autoStartTurnedOn) {
+                        manager.ensureServerRunning()
                     }
                 }
                 else -> {
@@ -434,6 +459,7 @@ class SweepSettingsConfigurable(
     override fun reset() {
         enabledField.isSelected = settings.nextEditPredictionFlagOn
         localModeField.isSelected = settings.autocompleteLocalMode
+        autoStartField.isSelected = settings.autoStartLocalServer
         acceptWordField.isSelected = settings.acceptWordOnRightArrow
         showBadgeField.isSelected = config.isShowAutocompleteBadge()
         disableConflictsField.isSelected = config.isDisableConflictingPluginsEnabled()
@@ -442,6 +468,7 @@ class SweepSettingsConfigurable(
         modelRepoField.text = config.getAutocompleteLocalModelRepo()
         modelFilenameField.text = config.getAutocompleteLocalModelFilename()
         mlxModelRepoField.text = config.getAutocompleteMlxModelRepo()
+        mlxModelRevisionField.text = config.getAutocompleteMlxModelRevision()
         backendCombo.selectedItem = when (config.getAutocompleteBackend()) {
             BACKEND_MLX_KEY -> BACKEND_MLX_LABEL
             else -> BACKEND_LLAMACPP_LABEL

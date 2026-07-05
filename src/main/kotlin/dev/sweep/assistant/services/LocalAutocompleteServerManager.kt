@@ -125,7 +125,7 @@ class LocalAutocompleteServerManager : Disposable {
         if (isStarting) return
         if (isServerHealthy()) return
 
-        if (currentBackend() == "mlx" && !isMacArm) {
+        if (currentBackend() == "mlx" && !SweepSettings.isAppleSilicon()) {
             val msg = "MLX backend requires macOS on Apple Silicon. Switch to llama.cpp backend or use External mode."
             onStatus?.invoke(msg)
             showNotification(msg, NotificationType.ERROR)
@@ -164,13 +164,6 @@ class LocalAutocompleteServerManager : Disposable {
     }
 
     private val isWindows = System.getProperty("os.name").lowercase().contains("win")
-
-    private val isMacArm: Boolean
-        get() {
-            val os = System.getProperty("os.name").lowercase()
-            val arch = System.getProperty("os.arch").lowercase()
-            return os.contains("mac") && (arch == "aarch64" || arch == "arm64")
-        }
 
     private fun currentBackend(): String =
         try {
@@ -222,7 +215,9 @@ class LocalAutocompleteServerManager : Disposable {
             when (settings.autocompleteBackend) {
                 "mlx" -> {
                     val repo = settings.autocompleteMlxModelRepo.trim()
+                    val revision = settings.autocompleteMlxModelRevision.trim()
                     if (repo.isNotEmpty()) pb.environment()["MODEL_REPO"] = repo
+                    if (revision.isNotEmpty()) pb.environment()["MODEL_REVISION"] = revision
                 }
                 else -> {
                     val repo = settings.autocompleteLocalModelRepo.trim()
@@ -406,7 +401,7 @@ class LocalAutocompleteServerManager : Disposable {
         // Don't tear down a healthy server just to fail to start a replacement
         // the platform can't run. startServer() would refuse the MLX boot and
         // leave the user with no autocomplete backend.
-        if (currentBackend() == "mlx" && !isMacArm) {
+        if (currentBackend() == "mlx" && !SweepSettings.isAppleSilicon()) {
             val msg = "Cannot restart: MLX backend requires macOS on Apple Silicon."
             showNotification(msg, NotificationType.ERROR)
             return

@@ -29,7 +29,8 @@ class AutocompleteStartupActivity : ProjectActivity {
         RecentEditsTracker.getInstance(project)
         IdeaVimIntegrationService.getInstance(project).configureIdeaVimIntegration()
 
-        if (SweepSettings.getInstance().autocompleteLocalMode) {
+        val settings = SweepSettings.getInstance()
+        if (settings.autocompleteLocalMode && settings.autoStartLocalServer) {
             ApplicationManager.getApplication().executeOnPooledThread {
                 LocalAutocompleteServerManager.getInstance().ensureServerRunning()
             }

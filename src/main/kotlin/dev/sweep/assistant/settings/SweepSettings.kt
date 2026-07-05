@@ -44,6 +44,12 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
         private const val DEFAULT_DISABLE_CONFLICTING_PLUGINS = true
 
         fun getInstance(): SweepSettings = ApplicationManager.getApplication().getService(SweepSettings::class.java)
+
+        fun isAppleSilicon(): Boolean {
+            val os = System.getProperty("os.name").lowercase()
+            val arch = System.getProperty("os.arch").lowercase()
+            return os.contains("mac") && (arch == "aarch64" || arch == "arm64")
+        }
     }
 
     // Do not notify settings changed on each save, fire it in config instead
@@ -178,6 +184,16 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
 
     var autocompleteLocalMode: Boolean = false
 
+    // Whether to automatically start the local server on IDE startup.
+    // Default false for new installs. A one-time migration in loadState() flips
+    // this on for users who already had autocompleteLocalMode = true before
+    // the flag existed, so they don't silently lose auto-start on upgrade.
+    var autoStartLocalServer: Boolean = false
+
+    // Tracks whether the one-time autoStartLocalServer migration has run.
+    // Do not set this manually — see loadState().
+    var autoStartLocalServerMigrated: Boolean = false
+
     var autocompleteLocalPort: Int = 8081
 
     var autocompleteLocalModelRepo: String = "sweepai/sweep-next-edit-0.5B"
@@ -194,7 +210,12 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
     // completions (mlx-lm does not enable trust_remote_code, so this is not a
     // direct RCE vector). Users may override in Settings; fork maintainers
     // should point this at a repo they control or pin a specific revision.
+    // To pin a revision, set autocompleteMlxModelRevision to a specific commit hash.
     var autocompleteMlxModelRepo: String = "Cyanophyte/sweep-next-edit-v2-7B-mlx-8Bit"
+
+    // Pin the MLX model repo to a specific commit hash for supply-chain hardening.
+    // Empty string means "latest" (default).
+    var autocompleteMlxModelRevision: String = ""
 
     fun ensureDefaultPromptsInitialized() {
         var addedPrompt = false
@@ -292,5 +313,11 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
         XmlSerializerUtil.copyBean(state, this)
         // Initialize default prompts after loading state
         ensureDefaultPromptsInitialized()
+        // One-time migration for users upgrading from a version where
+        // autocompleteLocalMode alone drove startup — preserve their behavior.
+        if (!autoStartLocalServerMigrated) {
+            if (autocompleteLocalMode) autoStartLocalServer = true
+            autoStartLocalServerMigrated = true
+        }
     }
 }

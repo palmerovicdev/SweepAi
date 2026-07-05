@@ -37,6 +37,7 @@ from .prompt import (
 )
 
 DEFAULT_MODEL_REPO = "Cyanophyte/sweep-next-edit-v2-7B-mlx-8Bit"
+DEFAULT_MODEL_REVISION = ""  # empty = latest; pin to a commit hash for supply-chain hardening
 DEFAULT_PORT = 8081
 
 logger = logging.getLogger("sweep-autocomplete-mlx")
@@ -105,20 +106,21 @@ def _build_response(
     }
 
 
-def create_app(model_repo: str) -> FastAPI:
+def create_app(model_repo: str, model_revision: str = "") -> FastAPI:
     app = FastAPI(title="sweep-autocomplete-mlx")
-    state_lock = threading.Lock()
+    # Written once by the loader thread on failure; read by /health and the
+    # request handler. Dict access is atomic under the GIL and the value only
+    # transitions None -> str (never back), so no lock is needed.
     load_error: Dict[str, Optional[str]] = {"msg": None}
 
-    model = get_model(model_repo)
+    model = get_model(model_repo, model_revision)
 
     def _load_in_background() -> None:
         try:
             model.load()
         except Exception as e:  # pragma: no cover - surfaced in /health
             logger.exception("Failed to load MLX model: %s", e)
-            with state_lock:
-                load_error["msg"] = str(e)
+            load_error["msg"] = str(e)
 
     threading.Thread(target=_load_in_background, daemon=True).start()
 
@@ -134,7 +136,7 @@ def create_app(model_repo: str) -> FastAPI:
                 status_code=503,
                 content={"status": "loading", "model_repo": model.model_repo},
             )
-        return JSONResponse(content={"status": "ok", "model_repo": model.model_repo})
+        return JSONResponse(content={"status": "ok", "model_repo": model.model_repo, "model_revision": model._model_revision or "latest"})
 
     @app.post("/backend/next_edit_autocomplete")
     async def next_edit_autocomplete(request: Request) -> StreamingResponse:
@@ -242,6 +244,11 @@ def main() -> None:
         default=os.environ.get("MODEL_REPO", DEFAULT_MODEL_REPO),
         help="HuggingFace repo id of an MLX-converted model.",
     )
+    parser.add_argument(
+        "--model-revision",
+        default=os.environ.get("MODEL_REVISION", DEFAULT_MODEL_REVISION),
+        help="Pin model to a specific commit hash for supply-chain hardening. Default: latest.",
+    )
     parser.add_argument("--log-level", default=os.environ.get("LOG_LEVEL", "info"))
     args = parser.parse_args()
 
@@ -252,7 +259,7 @@ def main() -> None:
 
     import uvicorn
 
-    app = create_app(args.model_repo)
+    app = create_app(args.model_repo, args.model_revision)
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
 
 

@@ -1078,6 +1078,12 @@ class SweepConfig(
         SweepSettings.getInstance().autocompleteMlxModelRepo = repo
     }
 
+    fun getAutocompleteMlxModelRevision(): String = SweepSettings.getInstance().autocompleteMlxModelRevision
+
+    fun updateAutocompleteMlxModelRevision(revision: String) {
+        SweepSettings.getInstance().autocompleteMlxModelRevision = revision
+    }
+
     // Autocomplete exclusion banner visibility
     fun isHideAutocompleteExclusionBanner(): Boolean = state.hideAutocompleteExclusionBanner
 

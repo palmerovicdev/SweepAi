@@ -8,7 +8,7 @@ indices we need to build the response back.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 
 PROMPT_TEMPLATE = """<|file_sep|>{file_path}

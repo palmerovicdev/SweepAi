@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class MlxModel:
-    def __init__(self, model_repo: str) -> None:
+    def __init__(self, model_repo: str, model_revision: str = "") -> None:
         self._model_repo = model_repo
+        self._model_revision = model_revision
         self._lock = threading.Lock()
         self._ready = False
         self._model = None
@@ -36,11 +37,14 @@ class MlxModel:
         from mlx_lm import load  # imported here so server can boot before mlx is verified
 
         logger.info("Loading MLX model %s ...", self._model_repo)
-        model, tokenizer = load(self._model_repo)
+        kwargs = {}
+        if self._model_revision:
+            kwargs["revision"] = self._model_revision
+        model, tokenizer = load(self._model_repo, **kwargs)
         self._model = model
         self._tokenizer = tokenizer
         self._ready = True
-        logger.info("MLX model loaded.")
+        logger.info("MLX model loaded (revision=%s).", self._model_revision or "default")
 
     def generate_completion(
         self,
@@ -79,9 +83,11 @@ _singleton: Optional[MlxModel] = None
 _singleton_lock = threading.Lock()
 
 
-def get_model(model_repo: str) -> MlxModel:
+def get_model(model_repo: str, model_revision: str = "") -> MlxModel:
     global _singleton
     with _singleton_lock:
-        if _singleton is None or _singleton.model_repo != model_repo:
-            _singleton = MlxModel(model_repo)
+        if _singleton is None or _singleton.model_repo != model_repo or _singleton._model_revision != model_revision:
+            # Drop reference to old model so it can be GC'd before loading the new one
+            _singleton = None
+            _singleton = MlxModel(model_repo, model_revision)
         return _singleton

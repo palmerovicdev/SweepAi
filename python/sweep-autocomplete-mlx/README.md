@@ -28,6 +28,8 @@ MODEL_REPO=Cyanophyte/sweep-next-edit-v2-7B-mlx-8Bit \
 
 - `MODEL_REPO` — HF repo of an MLX-converted model
   (default `Cyanophyte/sweep-next-edit-v2-7B-mlx-8Bit`).
+- `MODEL_REVISION` — Pin to a specific commit hash for supply-chain hardening
+  (default empty; uses latest).
 - `LOG_LEVEL` — `info` (default), `debug`, `warning`, etc.
 
 ## Plugin settings

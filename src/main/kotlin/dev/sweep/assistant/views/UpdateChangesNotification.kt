@@ -55,8 +55,15 @@ class UpdateChangesNotification(
 
     private val nonCloudContent: String = """
     <ul>
+      <li><b>New</b>
+        <ul>
+            <li>Chat can now delegate the conversation to an external CLI agent (OpenCode or Codex). Pick the provider in Settings &rarr; Sweep AI &rarr; Chat Provider.</li>
+            <li>Provider, model, approval, sandbox, thinking and effort can now be picked directly from the Chat Provider settings as dropdowns.</li>
+        </ul>
+      </li>
       <li><b>Bug Fixes and Improvements</b>
         <ul>
+            <li>Chat Provider "Test Connection" no longer hangs indefinitely — it now enforces a strict per-step timeout and always reports back.</li>
             <li>Streamed file modifications now show additions and removals as they happen.</li>
         </ul>
       </li>

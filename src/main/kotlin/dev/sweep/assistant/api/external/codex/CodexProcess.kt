@@ -52,6 +52,7 @@ class CodexProcess private constructor(
         fun start(
             command: String,
             extraArgs: List<String>,
+            preSubcommandArgs: List<String> = emptyList(),
         ): CodexProcess {
             val env = loadEnv().toMutableMap()
             val resolvedExecutable = resolveExecutableOnPath(command, env["PATH"])
@@ -62,6 +63,8 @@ class CodexProcess private constructor(
 
             val commandLine = buildList {
                 add(resolvedExecutable)
+                // Global options like `-c key=value` must precede the subcommand.
+                addAll(preSubcommandArgs)
                 add("app-server")
                 add("--listen")
                 add("stdio://")

@@ -1,20 +1,27 @@
 # Plan de Implementación: Chat con Agentes Externos (OpenCode y Codex)
 
-> Versión: 1 · Fecha: 2026-07-05 · Estado: **Fase 4 completada** (engine orquesta OpenCode/Codex vía `Stream.start()`; queda pendiente Fase 5 = UX polish).
+> Versión: 1 · Fecha: 2026-07-05 · Estado: **Fases 1–6 completadas + Follow-ups v1.29.5** (tool window registrado, Test Connection con timeout defensivo, model/effort/thinking como dropdowns en Settings y en quick-picker del chat).
 > Reemplaza para efectos de implementación al MVP definido en `acp-chat-implementation.md` (que se mantiene como referencia futura para agentes ACP nativos, ver §3.4).
 > Complementa a `local-chat-implementation.md` (chat local con un LLM directo vía OpenAI-compatible API).
 
-## Estado actual (última actualización: 2026-07-05)
+## Estado actual (última actualización: 2026-07-05, v1.29.5)
 
 | Fase | Estado |
 |---|---|
 | Fase 0 — Preparación | ✅ hecho (OkHttp/Ktor + kotlinx-serialization ya disponibles) |
-| Fase 1 — Data models + Settings + skeleton | ✅ hecho (7 campos, pestaña "Chat Provider", registry, session store, engine stub) |
-| Fase 2 — OpenCode provider | ✅ hecho (process + HTTP/SSE + adapter + Test Connection) |
-| Fase 3 — Codex provider | ✅ hecho (process + JSON-RPC client + adapter + provider + Test Connection) |
+| Fase 1 — Data models + Settings + skeleton | ✅ hecho (7 campos + `codexReasoningEffort` + `codexThinking`, pestaña "Chat Provider" con dropdowns, registry, session store, engine stub) |
+| Fase 2 — OpenCode provider | ✅ hecho (process + HTTP/SSE + adapter + Test Connection con timeout ping) |
+| Fase 3 — Codex provider | ✅ hecho (process + JSON-RPC client + adapter + provider + Test Connection + `-c` config overrides para effort/thinking) |
 | Fase 4 — Engine + Stream integration | ✅ hecho (engine `stream`/`cancel`/`onProviderChanged` + Stream routing + `recordExternalCompletion` + guard en `ingestToolCalls`) |
-| Fase 5 — UX polish | ⏳ pendiente |
-| Fase 6 — Tests, docs, release | ⏳ pendiente |
+| Fase 5 — UX polish | ✅ hecho (badge external en tooltip, permission modal, toasts accionables, `newRemoteSession` API, **tool window Sweep AI registrado en `plugin.xml`**, **quick-picker en la barra superior del chat**) |
+| Fase 6 — Tests, docs, release | ✅ hecho (`ExternalAgentProtocolTest` + README + brainstorm + change-notes v1.29.5; integration tests con fakes quedan como follow-up) |
+
+## Follow-ups completados en v1.29.5
+
+- **Bug fix — Test Connection colgado:** `SweepChatProviderConfigurable.runTestConnection` ahora envuelve el probe en `withTimeout(45 s)`; adicionalmente `OpencodeHttpClient.ping()` corta a 5 s con `withTimeout` propio en vez de heredar el `requestTimeout = 0` del cliente Ktor (que sí necesitamos para SSE).
+- **Tool window en la barra:** `<toolWindow id="Sweep AI" anchor="right" icon="/icons/sweep13x13.svg" factoryClass="dev.sweep.assistant.Sweep"/>` registrado en `plugin.xml`. La `SweepStartupActivity` sigue sin engancharse para no arrastrar dependencias cloud del plan original; el `Sweep.createToolWindowContent` popula los `titleActions` por sí solo.
+- **Dropdowns en Settings:** `codexModel` pasa de `JBTextField` a un `JComboBox` editable con presets (`gpt-5-codex`, `gpt-5.5`, etc.). Se añaden dropdowns para `Reasoning effort` (`minimal|low|medium|high`) y `Thinking` (`shown|hidden`) que se propagan al subproceso como `-c model_reasoning_effort=...` y `-c hide_agent_reasoning=...` antes del subcomando `app-server`.
+- **Quick-picker en el chat:** `ExternalAgentQuickSettings` (`src/main/kotlin/dev/sweep/assistant/views/`) — pequeño widget visible sólo cuando `chatProviderId ∈ {opencode, codex}` que abre un popup con los mismos dropdowns de Settings, sincronizado por `SettingsChangedNotifier`. Se ancla en el `leftContainer` del `topRow` del `ChatComponent`.
 
 ---
 
@@ -817,22 +824,24 @@ Estas quedan como *TBD* para RFC interna, no bloqueantes para arrancar Fase 1.
 - [x] Guard adicional: `SweepAgentSession.ingestToolCalls` salta `scheduleIfReady` cuando `mcpProperties["executor"]` está presente, para no re-ejecutar localmente los tool calls del agente externo.
 - [ ] Smoke test manual con `chatProviderId=opencode` y `codex` una vez el ecosistema local esté preparado (Fase 6).
 
-### Fase 5 — UX polish (~2 días)
+### Fase 5 — UX polish (~2 días) — ✅ hecho
 
-- [ ] Badge "external" en bloques de tool call cuando `mcpProperties["executor"] != null`.
-- [ ] Chip informativo "Resumed remote session" / "Started new session".
-- [ ] Toasts de error accionables (`codex login`, `opencode auth login`, config path).
-- [ ] Diálogo modal de permission con Allow/Deny.
-- [ ] Iconos por provider en el dropdown.
-- [ ] Botón "New remote session" (compact) en el header del chat.
+- [x] Badge "Executed by …" en tooltips de bloques de tool call cuando `mcpProperties["executor"] != null` (ver `AgentActionBlockDisplay.buildToolCallTooltip`).
+- [x] Toasts de error accionables (`codex login`, `opencode auth login`, path no encontrado). Se disparan desde `ExternalAgentChatEngine.surfaceErrorToast` en errores emitidos por el provider y en fallos terminales del engine.
+- [x] Diálogo modal Allow/Deny para `PermissionRequested` (`ExternalAgentChatEngine.promptPermission`).
+- [x] Botón/API "New remote session": `ExternalAgentChatEngine.newRemoteSession(conversationId)` borra el mapping del store y fuerza `createSession` en el próximo mensaje.
+- [ ] Chip informativo "Resumed remote session" / "Started new session" — pendiente (requiere componente visual en el header del chat).
+- [ ] Iconos por provider en el dropdown — pendiente (nice-to-have).
 
-### Fase 6 — Tests, docs, release (~2 días)
+### Fase 6 — Tests, docs, release (~2 días) — ✅ hecho (lo esencial)
 
-- [ ] Unit tests: `CodexJsonRpcClient` framing y multiplexing; `OpencodeHttpClient` SSE parsing; `ExternalAgentProviderRegistry`.
-- [ ] Integration tests con fakes: `FakeCodexProcess` (script bash o Kotlin) que emite frames pre-grabados; `FakeOpencodeServer` (HTTP embebido).
-- [ ] Manual QA matrix (§21).
-- [ ] Actualizar `README.md` y `docs/plans/brainstorm-ideas.md` — mover el ítem del roadmap "External agents" a "Done".
-- [ ] Actualizar `CHANGELOG` para el próximo release (usar skill `release-notes`).
+- [x] Unit tests: `ExternalAgentProtocolTest` cubre traducción de eventos OpenCode y Codex + filtrado por sesión/thread + `ExternalAgentProviderRegistry`.
+- [x] Actualizar `README.md`: sección "External Agent Chat (OpenCode / Codex)".
+- [x] Actualizar `docs/plans/brainstorm-ideas.md`: marcado como ✅ hecho en el índice y en la fila de OpenCode/Codex.
+- [x] Actualizar `plugin.xml` `<change-notes>` y `UpdateChangesNotification.nonCloudContent`.
+- [ ] Integration tests con fakes: `FakeCodexProcess` (script bash o Kotlin) que emite frames pre-grabados; `FakeOpencodeServer` (HTTP embebido) — pendiente para un release posterior.
+- [ ] Manual QA matrix (§21) — requiere binarios reales.
+- [ ] Actualizar `CHANGELOG` — completado vía `plugin.xml` change-notes (no hay `CHANGELOG.md` separado).
 
 ### Fase 7 — Post-MVP (backlog)
 

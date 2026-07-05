@@ -20,6 +20,7 @@
 |---|---|
 | Chat Local + Commit Local | `local-chat-implementation.md` |
 | Chat via ACP (Agent Client Protocol) | `acp-chat-implementation.md` |
+| Chat con Agentes Externos (OpenCode, Codex) | `external-agents-chat-implementation.md` ✅ *hecho — Fases 1–6 implementadas* |
 | AI Debug Mode | `jetbrains-ai-debug-mode-doc.md` |
 
 ---
@@ -40,12 +41,12 @@ Usar modelos locales (Ollama, LM Studio, etc.) vía OpenAI-compatible API para c
 ### ACP Chat — Agentes Externos
 Conectar el chat con agentes externos via Agent Client Protocol (JSON-RPC 2.0 sobre stdio).
 
-| Agente | Estado ACP | Prioridad |
-|---|---|---|
-| Cursor | Nativo (`agent acp`) | Alta |
-| Claude Code | Vía `claude-code-acp` | Alta |
-| Codex | Adapter necesario (app-server protocol) | Media |
-| OpenCode | Adapter necesario (HTTP API) | Media |
+| Agente | Estado ACP | Prioridad | Estado en Sweep |
+|---|---|---|---|
+| Cursor | Nativo (`agent acp`) | Alta | ⏳ post-MVP |
+| Claude Code | Vía `claude-code-acp` | Alta | ⏳ post-MVP |
+| Codex | Adapter propio (app-server protocol) | Media | ✅ hecho (`external-agents-chat-implementation.md`) |
+| OpenCode | Adapter propio (HTTP API) | Media | ✅ hecho (`external-agents-chat-implementation.md`) |
 
 ### AI Debug Mode
 Exponer el debugger de JetBrains como herramientas MCP para que el agente pueda: poner breakpoints, step, inspeccionar variables, evaluar expresiones.
@@ -102,7 +103,7 @@ Exponer el debugger de JetBrains como herramientas MCP para que el agente pueda:
 | **MCP Server embebido** | Sweep como servidor MCP para otros agentes externos | Alto |
 | **MCP tools marketplace** | UI para descubrir, instalar y configurar MCP servers | Alto |
 | **MCP tools desde settings** | Configurar MCP servers sin tocar JSON | Medio |
-| **OpenCode bridge** | Integración directa con OpenCode como backend | Medio |
+| **OpenCode bridge** | Integración directa con OpenCode como backend | ✅ hecho — Fase 4 en `external-agents-chat-implementation.md` |
 
 ---
 

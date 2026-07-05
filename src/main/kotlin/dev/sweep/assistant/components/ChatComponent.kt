@@ -76,6 +76,7 @@ class ChatComponent(
     private var unifiedBannerContainer: UnifiedBannerContainer? = null
     private var pendingChangesBanner: PendingChangesBanner? = null
     private var queuedMessagePanel: QueuedMessagePanel? = null
+    private var externalAgentQuickSettings: dev.sweep.assistant.views.ExternalAgentQuickSettings? = null
 
     private var textFieldKeyListener: KeyPressedAdapter? = null
     private var textFieldDocumentListener: javax.swing.event.DocumentListener? = null
@@ -494,6 +495,22 @@ class ChatComponent(
                                                     setAvailableOptions(SweepConstants.CHAT_MODES)
                                                 }
 
+                                            // Quick-pick widget for external agent providers (Codex/OpenCode).
+                                            // Hidden when the chat is on Sweep Cloud / Local, appears with
+                                            // provider label + gear popup when switched to an external agent.
+                                            externalAgentQuickSettings =
+                                                dev.sweep.assistant.views.ExternalAgentQuickSettings(project)
+                                            externalAgentQuickSettings?.let { widget ->
+                                                project.messageBus.connect(this@ChatComponent).subscribe(
+                                                    dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier.TOPIC,
+                                                    dev.sweep.assistant.settings.SweepSettings.SettingsChangedNotifier {
+                                                        ApplicationManager.getApplication().invokeLater {
+                                                            widget.refresh()
+                                                        }
+                                                    },
+                                                )
+                                            }
+
                                             // Create a left container for the model picker and mode toggle
                                             val leftContainer =
                                                 JPanel(GridBagLayout()).apply {
@@ -502,6 +519,7 @@ class ChatComponent(
                                                     isOpaque = true // Ensure opacity is consistent
                                                     add(modeToggle)
                                                     add(modelPickerContainer)
+                                                    externalAgentQuickSettings?.let { add(it) }
                                                 }
                                             add(leftContainer, BorderLayout.WEST)
                                             add(feedbackComponent.getComponent(), BorderLayout.CENTER)

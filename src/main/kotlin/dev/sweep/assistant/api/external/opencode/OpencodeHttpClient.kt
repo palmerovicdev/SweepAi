@@ -52,7 +52,11 @@ class OpencodeHttpClient(
 
     suspend fun ping(): Boolean =
         try {
-            val response = client.get(url("/session"))
+            // Bound the ping tightly so Test Connection never hangs when the
+            // server socket is up but the request handler is stuck.
+            val response = kotlinx.coroutines.withTimeout(PING_TIMEOUT_MS) {
+                client.get(url("/session"))
+            }
             response.status.value in 200..299
         } catch (e: Exception) {
             logger.warn("OpenCode ping failed: ${e.message}")
@@ -186,6 +190,7 @@ class OpencodeHttpClient(
 
     companion object {
         private val logger = Logger.getInstance(OpencodeHttpClient::class.java)
+        private const val PING_TIMEOUT_MS: Long = 5_000L
     }
 }
 

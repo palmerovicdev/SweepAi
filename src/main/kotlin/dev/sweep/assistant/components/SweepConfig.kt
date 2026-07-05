@@ -1146,6 +1146,18 @@ class SweepConfig(
         SweepSettings.getInstance().codexSandbox = sandbox
     }
 
+    fun getCodexReasoningEffort(): String = SweepSettings.getInstance().codexReasoningEffort
+
+    fun updateCodexReasoningEffort(effort: String) {
+        SweepSettings.getInstance().codexReasoningEffort = effort
+    }
+
+    fun getCodexThinking(): String = SweepSettings.getInstance().codexThinking
+
+    fun updateCodexThinking(thinking: String) {
+        SweepSettings.getInstance().codexThinking = thinking
+    }
+
     // Autocomplete exclusion banner visibility
     fun isHideAutocompleteExclusionBanner(): Boolean = state.hideAutocompleteExclusionBanner
 

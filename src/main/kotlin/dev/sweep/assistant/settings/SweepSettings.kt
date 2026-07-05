@@ -317,6 +317,28 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
                 field = value
             }
         }
+    // "" | "minimal" | "low" | "medium" | "high"
+    // Empty = leave codex to pick (from config.toml or default).
+    var codexReasoningEffort: String = ""
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
+    // "" | "shown" | "hidden"
+    // Controls Codex `hide_agent_reasoning`. Empty = respect Codex's own default.
+    var codexThinking: String = ""
+        set(value) {
+            if (value != field) {
+                field = value
+                notifySettingsChanged()
+            } else {
+                field = value
+            }
+        }
 
     fun ensureDefaultPromptsInitialized() {
         var addedPrompt = false
@@ -370,15 +392,19 @@ class SweepSettings : PersistentStateComponent<SweepSettings> {
     /**
      * Determines if the user has configured Sweep settings if either:
      * 1. Both GitHub token and base URL have been set to non-default values, OR
-     * 2. An Anthropic API key has been provided
+     * 2. An Anthropic API key has been provided, OR
+     * 3. An external chat provider (OpenCode / Codex) is selected — the user
+     *    delegated the chat backend and doesn't need Sweep Cloud credentials.
      */
     val hasBeenSet: Boolean
-        get() =
-            if (SweepSettingsParser.isCloudEnvironment()) {
+        get() {
+            if (chatProviderId in setOf("opencode", "codex")) return true
+            return if (SweepSettingsParser.isCloudEnvironment()) {
                 githubToken != DEFAULT_GITHUB_TOKEN
             } else {
                 githubToken != DEFAULT_GITHUB_TOKEN && baseUrl != DEFAULT_SWEEP_URL
             }
+        }
 
     fun notifySettingsChanged() {
         ApplicationManager.getApplication().invokeLater {

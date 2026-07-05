@@ -282,11 +282,15 @@ class CodexAgentProvider : ExternalAgentProvider {
 
     private suspend fun spawnAndInitialize(settings: SweepSettings): CodexSubprocessCtx {
         val command = settings.codexCommand.ifBlank { "codex" }
-        val extraArgs =
-            settings.codexExtraArgs.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val userExtraArgs = settings.codexExtraArgs.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val configOverrides = buildCodexConfigOverrides(settings)
         val process =
             withContext(Dispatchers.IO) {
-                CodexProcess.start(command = command, extraArgs = extraArgs)
+                CodexProcess.start(
+                    command = command,
+                    extraArgs = userExtraArgs,
+                    preSubcommandArgs = configOverrides,
+                )
             }
 
         val notifications = MutableSharedFlow<Pair<String, kotlinx.serialization.json.JsonElement?>>(
@@ -328,6 +332,32 @@ class CodexAgentProvider : ExternalAgentProvider {
             throw e
         }
         return CodexSubprocessCtx(process = process, client = client, notifications = notifications)
+    }
+
+    /**
+     * Build the `-c key=value` config overrides fed to Codex before the
+     * `app-server` subcommand. These are how the CLI accepts ad-hoc TOML
+     * overrides at spawn time; using them avoids requiring users to hand-edit
+     * `~/.codex/config.toml` just to change reasoning effort per project.
+     */
+    private fun buildCodexConfigOverrides(settings: SweepSettings): List<String> {
+        val overrides = mutableListOf<String>()
+        val effort = settings.codexReasoningEffort.trim()
+        if (effort.isNotEmpty()) {
+            overrides += "-c"
+            overrides += "model_reasoning_effort=\"$effort\""
+        }
+        when (settings.codexThinking.trim()) {
+            "hidden" -> {
+                overrides += "-c"
+                overrides += "hide_agent_reasoning=true"
+            }
+            "shown" -> {
+                overrides += "-c"
+                overrides += "hide_agent_reasoning=false"
+            }
+        }
+        return overrides
     }
 
     private fun mapAuthOrRpcError(e: CodexRpcException): String {

@@ -13,6 +13,7 @@ import dev.sweep.assistant.api.external.TestResult
 import dev.sweep.assistant.components.SweepConfig
 import dev.sweep.assistant.settings.SweepSettings
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.awt.Dimension
 import javax.swing.BoxLayout
 import javax.swing.JButton
@@ -38,6 +39,25 @@ private const val CODEX_ID = "codex"
 private val OPENCODE_AGENTS = arrayOf("build", "plan", "chat")
 private val CODEX_APPROVAL_POLICIES = arrayOf("never", "on-request", "on-failure", "untrusted")
 private val CODEX_SANDBOXES = arrayOf("read-only", "workspace-write", "danger-full-access")
+
+// Empty first entry means "use Codex's persisted default" (from ~/.codex/config.toml).
+// The combo is editable so users can also type a custom model id.
+private val CODEX_MODELS =
+    arrayOf(
+        "",
+        "gpt-5-codex",
+        "gpt-5.5",
+        "gpt-5",
+        "gpt-5-mini",
+        "gpt-4.1",
+        "o3",
+        "o3-mini",
+        "o4-mini",
+    )
+private val CODEX_REASONING_EFFORTS =
+    arrayOf("", "minimal", "low", "medium", "high")
+private val CODEX_THINKING_MODES =
+    arrayOf("", "shown", "hidden")
 
 /**
  * Fase 1 (§13.2) — Chat Provider settings tab.
@@ -70,13 +90,17 @@ class SweepChatProviderConfigurable(
     // Codex fields
     private val codexCommandField = JBTextField().apply { columns = 32 }
     private val codexExtraArgsField = JBTextField().apply { columns = 32 }
-    private val codexModelField =
-        JBTextField().apply {
-            columns = 32
-            emptyText.text = "(default — uses codex's persisted preference)"
+
+    // Model is a dropdown so users can pick a known Codex model instead of
+    // typing a raw id; still editable so unusual / new model ids are accepted.
+    private val codexModelCombo =
+        JComboBox(CODEX_MODELS).apply {
+            isEditable = true
         }
     private val codexApprovalCombo = JComboBox(CODEX_APPROVAL_POLICIES)
     private val codexSandboxCombo = JComboBox(CODEX_SANDBOXES)
+    private val codexReasoningEffortCombo = JComboBox(CODEX_REASONING_EFFORTS)
+    private val codexThinkingCombo = JComboBox(CODEX_THINKING_MODES)
     private val codexStatusLabel = JBLabel(" ")
 
     private val opencodePanel = JPanel()
@@ -135,11 +159,15 @@ class SweepChatProviderConfigurable(
         codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         codexPanel.add(labeledRow("Extra args:", codexExtraArgsField))
         codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
-        codexPanel.add(labeledRow("Model:", codexModelField))
+        codexPanel.add(labeledRow("Model:", codexModelCombo))
         codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         codexPanel.add(labeledRow("Approval:", codexApprovalCombo))
         codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         codexPanel.add(labeledRow("Sandbox:", codexSandboxCombo))
+        codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
+        codexPanel.add(labeledRow("Reasoning effort:", codexReasoningEffortCombo))
+        codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
+        codexPanel.add(labeledRow("Thinking:", codexThinkingCombo))
         codexPanel.add(javax.swing.Box.createRigidArea(Dimension(0, 4)))
         codexPanel.add(labeledRow("Status:", codexStatusLabel))
     }
@@ -226,9 +254,19 @@ class SweepChatProviderConfigurable(
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = try {
                 runBlocking {
-                    val handle = provider.ensureRunning(project, SweepSettings.getInstance())
-                    provider.testConnection(handle)
+                    // Hard outer bound so the label never gets stuck at "Testing…"
+                    // even if a subprocess never exits or an HTTP request never
+                    // returns; per-step timeouts inside the providers are shorter.
+                    withTimeout(TEST_CONNECTION_TIMEOUT_MS) {
+                        val handle = provider.ensureRunning(project, SweepSettings.getInstance())
+                        provider.testConnection(handle)
+                    }
                 }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                TestResult.Fail(
+                    "Timed out after ${TEST_CONNECTION_TIMEOUT_MS / 1000}s. " +
+                        "Check that the executable is on PATH and can start manually.",
+                )
             } catch (e: Exception) {
                 TestResult.Fail(e.message ?: e.javaClass.simpleName)
             }
@@ -247,6 +285,13 @@ class SweepChatProviderConfigurable(
         }
     }
 
+    companion object {
+        private const val TEST_CONNECTION_TIMEOUT_MS: Long = 45_000L
+    }
+
+    private fun codexModelValue(): String =
+        (codexModelCombo.editor?.item?.toString() ?: (codexModelCombo.selectedItem as? String).orEmpty()).trim()
+
     override fun isModified(): Boolean {
         val selected = (providerCombo.selectedItem as ProviderChoice).id
         return selected != config.getChatProviderId() ||
@@ -256,9 +301,11 @@ class SweepChatProviderConfigurable(
             (opencodeAgentCombo.selectedItem as String) != config.getOpencodeAgent() ||
             codexCommandField.text.trim() != config.getCodexCommand() ||
             codexExtraArgsField.text != config.getCodexExtraArgs() ||
-            codexModelField.text.trim() != config.getCodexModel() ||
+            codexModelValue() != config.getCodexModel() ||
             (codexApprovalCombo.selectedItem as String) != config.getCodexApprovalPolicy() ||
-            (codexSandboxCombo.selectedItem as String) != config.getCodexSandbox()
+            (codexSandboxCombo.selectedItem as String) != config.getCodexSandbox() ||
+            (codexReasoningEffortCombo.selectedItem as String) != config.getCodexReasoningEffort() ||
+            (codexThinkingCombo.selectedItem as String) != config.getCodexThinking()
     }
 
     override fun apply() {
@@ -270,9 +317,11 @@ class SweepChatProviderConfigurable(
         config.updateOpencodeAgent(opencodeAgentCombo.selectedItem as String)
         config.updateCodexCommand(codexCommandField.text.trim())
         config.updateCodexExtraArgs(codexExtraArgsField.text)
-        config.updateCodexModel(codexModelField.text.trim())
+        config.updateCodexModel(codexModelValue())
         config.updateCodexApprovalPolicy(codexApprovalCombo.selectedItem as String)
         config.updateCodexSandbox(codexSandboxCombo.selectedItem as String)
+        config.updateCodexReasoningEffort(codexReasoningEffortCombo.selectedItem as String)
+        config.updateCodexThinking(codexThinkingCombo.selectedItem as String)
     }
 
     override fun reset() {
@@ -285,11 +334,16 @@ class SweepChatProviderConfigurable(
         opencodeAgentCombo.selectedItem = config.getOpencodeAgent().takeIf { it in OPENCODE_AGENTS } ?: "build"
         codexCommandField.text = config.getCodexCommand()
         codexExtraArgsField.text = config.getCodexExtraArgs()
-        codexModelField.text = config.getCodexModel()
+        val storedModel = config.getCodexModel()
+        codexModelCombo.selectedItem = if (storedModel in CODEX_MODELS) storedModel else storedModel
         codexApprovalCombo.selectedItem =
             config.getCodexApprovalPolicy().takeIf { it in CODEX_APPROVAL_POLICIES } ?: "on-request"
         codexSandboxCombo.selectedItem =
             config.getCodexSandbox().takeIf { it in CODEX_SANDBOXES } ?: "workspace-write"
+        codexReasoningEffortCombo.selectedItem =
+            config.getCodexReasoningEffort().takeIf { it in CODEX_REASONING_EFFORTS } ?: ""
+        codexThinkingCombo.selectedItem =
+            config.getCodexThinking().takeIf { it in CODEX_THINKING_MODES } ?: ""
         opencodeStatusLabel.text = " "
         codexStatusLabel.text = " "
         updateProviderPanelVisibility()

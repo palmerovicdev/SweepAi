@@ -20,9 +20,17 @@
 <ul>
   <li><b>New</b>
     <ul>
+        <li>The <b>Sweep AI</b> tool window is now registered — a chat button appears in the tool window bars.</li>
+        <li>Chat Provider settings expose <b>Model</b>, <b>Approval</b>, <b>Sandbox</b>, <b>Reasoning effort</b> and <b>Thinking mode</b> as dropdowns rather than free-text fields.</li>
+        <li>Chat can now delegate a conversation to an <b>external CLI agent</b>: <b>OpenCode</b> (HTTP + SSE against <code>opencode serve</code>) or <b>Codex</b> (JSON-RPC 2.0 over stdio against <code>codex app-server</code>). Select the provider in Settings &rarr; Sweep AI &rarr; Chat Provider. The agent owns the tool loop; Sweep observes tool calls with an "Executed by &hellip;" badge.</li>
         <li>Plugin renamed to <b>Sweep Self-Hosted</b> for self-hosted installations.</li>
         <li>Local autocomplete now supports an <b>MLX (Apple Silicon)</b> backend in addition to llama.cpp. Configure it in Settings &rarr; Sweep Autocomplete.</li>
         <li>Model repository is now configurable per backend.</li>
+    </ul>
+  </li>
+  <li><b>Bug Fixes and Improvements</b>
+    <ul>
+        <li>"Test Connection" for Codex and OpenCode no longer hangs indefinitely; it enforces per-step and overall timeouts and always reports back.</li>
     </ul>
   </li>
 </ul>
@@ -44,9 +52,14 @@
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
         <postStartupActivity implementation="dev.sweep.assistant.startup.AutocompleteStartupActivity"/>
+        <toolWindow id="Sweep AI"
+                    anchor="right"
+                    icon="/icons/sweep13x13.svg"
+                    factoryClass="dev.sweep.assistant.Sweep"/>
         <notificationGroup id="Sweep Autocomplete" displayType="BALLOON"/>
         <notificationGroup id="Sweep Commit Messages" displayType="BALLOON"/>
         <notificationGroup id="Sweep Plugin Conflicts" displayType="BALLOON"/>
+        <notificationGroup id="Sweep AI Notifications" displayType="BALLOON"/>
         <applicationService serviceImplementation="dev.sweep.assistant.settings.SweepSettings"/>
         <applicationService serviceImplementation="dev.sweep.assistant.settings.SweepMetaData"/>
         <applicationService serviceImplementation="dev.sweep.assistant.services.LocalAutocompleteServerManager"/>

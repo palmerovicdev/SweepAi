@@ -8,6 +8,7 @@ indices we need to build the response back.
 """
 
 from dataclasses import dataclass
+import os
 from typing import List, Optional
 
 
@@ -22,7 +23,21 @@ PROMPT_TEMPLATE = """<|file_sep|>{file_path}
 {prefill}"""
 
 STOP_TOKENS = ["<|endoftext|>", "<|file_sep|>"]
-DEFAULT_MAX_NEW_TOKENS = 1024
+
+
+def _int_env(name: str, default: int, minimum: int = 0) -> int:
+    try:
+        return max(minimum, int(os.environ.get(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+DEFAULT_MAX_NEW_TOKENS = _int_env("MAX_NEW_TOKENS", 128, 1)
+DEFAULT_LINES_BEFORE = _int_env("PROMPT_LINES_BEFORE", 8, 0)
+DEFAULT_LINES_AFTER = _int_env("PROMPT_LINES_AFTER", 8, 0)
+DEFAULT_INITIAL_CONTEXT_LINES = _int_env("PROMPT_INITIAL_CONTEXT_LINES", 80, 0)
+DEFAULT_MAX_RETRIEVAL_CHUNKS = _int_env("PROMPT_MAX_RETRIEVAL_CHUNKS", 3, 0)
+DEFAULT_MAX_FILE_CHUNKS = _int_env("PROMPT_MAX_FILE_CHUNKS", 1, 0)
 
 
 @dataclass
@@ -96,8 +111,9 @@ def build_prompt(
     retrieval_chunks: Optional[List[FileChunk]] = None,
     file_chunks: Optional[List[FileChunk]] = None,
     changes_above_cursor: bool = False,
-    num_lines_before: int = 10,
-    num_lines_after: int = 10,
+    num_lines_before: int = DEFAULT_LINES_BEFORE,
+    num_lines_after: int = DEFAULT_LINES_AFTER,
+    initial_context_lines: int = DEFAULT_INITIAL_CONTEXT_LINES,
 ) -> BuiltPrompt:
     lines = file_contents.splitlines(True)
 
@@ -126,14 +142,14 @@ def build_prompt(
 
     prefill = compute_prefill(code_block, relative_cursor, changes_above_cursor)
 
-    context_start = max(0, cursor_line - 150)
-    context_end = min(len(lines), cursor_line + 150)
+    context_start = max(0, cursor_line - initial_context_lines)
+    context_end = min(len(lines), cursor_line + initial_context_lines)
     initial_file = "".join(lines[context_start:context_end])
 
     retrieval_results = ""
     if retrieval_chunks:
         retrieval_results = "".join(
-            f"\n{chunk.to_string()}" for chunk in retrieval_chunks
+            f"\n{chunk.to_string()}" for chunk in retrieval_chunks[:DEFAULT_MAX_RETRIEVAL_CHUNKS]
         )
 
     start_line = block_start + 1
@@ -152,7 +168,7 @@ def build_prompt(
     )
 
     if file_chunks:
-        formatted = "".join(c.to_string() for c in file_chunks) + formatted
+        formatted = "".join(c.to_string() for c in file_chunks[:DEFAULT_MAX_FILE_CHUNKS]) + formatted
 
     return BuiltPrompt(
         prompt=formatted,

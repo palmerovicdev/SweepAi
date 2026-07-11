@@ -8,8 +8,9 @@ returns the post-processed (stop-token-trimmed) model output for a prompt.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import threading
-from typing import Optional
+from typing import Callable, Optional
 
 from .prompt import DEFAULT_MAX_NEW_TOKENS, STOP_TOKENS
 
@@ -33,14 +34,21 @@ class MlxModel:
     def model_repo(self) -> str:
         return self._model_repo
 
+    def _load_target(self) -> str:
+        expanded = Path(self._model_repo).expanduser()
+        if expanded.exists():
+            return str(expanded.resolve())
+        return self._model_repo
+
     def load(self) -> None:
         from mlx_lm import load  # imported here so server can boot before mlx is verified
 
-        logger.info("Loading MLX model %s ...", self._model_repo)
+        load_target = self._load_target()
+        logger.info("Loading MLX model %s ...", load_target)
         kwargs = {}
         if self._model_revision:
             kwargs["revision"] = self._model_revision
-        model, tokenizer = load(self._model_repo, **kwargs)
+        model, tokenizer = load(load_target, **kwargs)
         self._model = model
         self._tokenizer = tokenizer
         self._ready = True
@@ -50,27 +58,34 @@ class MlxModel:
         self,
         prompt: str,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        should_stop: Optional[Callable[[], bool]] = None,
     ) -> str:
         if not self._ready:
             raise RuntimeError("MLX model not ready")
 
-        from mlx_lm import generate  # local import keeps the cli importable without mlx
+        from mlx_lm import stream_generate  # local import keeps the cli importable without mlx
 
-        # mlx-lm has no native stop-string support, so we generate then truncate.
-        # Greedy (temp=0) matches the reference inference.py.
+        # Stream generation so autocomplete can stop as soon as a custom stop
+        # marker appears, instead of always waiting for max_new_tokens.
         with self._lock:
-            text = generate(
+            if should_stop and should_stop():
+                return ""
+            chunks = []
+            for response in stream_generate(
                 self._model,
                 self._tokenizer,
                 prompt=prompt,
                 max_tokens=max_new_tokens,
-                verbose=False,
-            )
-
-        if isinstance(text, tuple):  # some mlx-lm versions return (text, info)
-            text = text[0]
-        if not isinstance(text, str):
-            text = str(text)
+            ):
+                if should_stop and should_stop():
+                    logger.info("Stopping stale MLX generation early.")
+                    break
+                chunks.append(response.text)
+                text = "".join(chunks)
+                if any(stop in text for stop in STOP_TOKENS):
+                    break
+            else:
+                text = "".join(chunks)
 
         for stop in STOP_TOKENS:
             idx = text.find(stop)

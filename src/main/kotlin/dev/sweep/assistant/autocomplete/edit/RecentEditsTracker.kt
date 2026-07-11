@@ -54,6 +54,7 @@ import java.util.*
 import java.util.Queue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicLong
 import javax.swing.SwingUtilities
 import kotlin.math.abs
 
@@ -341,6 +342,8 @@ class RecentEditsTracker(
     private var consumerJob: Job? = null
     private val fetchJobs =
         ConcurrentHashMap<Long, CompletableDeferred<Pair<AutocompleteRequestEntry, NextEditAutocompleteResponse?>>>()
+    private val activeFetchJobs = ConcurrentHashMap<Long, Job>()
+    private val latestFetchRequestTime = AtomicLong(0L)
     private val mutex = Mutex()
     private val completionChannel =
         Channel<Pair<AutocompleteRequestEntry, NextEditAutocompleteResponse?>>(Channel.BUFFERED)
@@ -1876,44 +1879,61 @@ class RecentEditsTracker(
         currentJob?.cancel()
         currentJob =
             scope.launch {
+                AutocompleteDebugLog.log("process: triggered")
                 // Check if autocomplete is snoozed
                 if (AutocompleteSnoozeService
                         .getInstance(project)
                         .isAutocompleteSnooze()
                 ) {
+                    AutocompleteDebugLog.log("process: skipped snoozed")
                     return@launch
                 }
 
                 if (getCurrentEditor()?.document?.isWritable == false) {
+                    AutocompleteDebugLog.log("process: skipped readonly document")
                     return@launch
                 }
 
-                val editorState = getCurrentEditorState() ?: return@launch
+                val editorState =
+                    getCurrentEditorState() ?: run {
+                        AutocompleteDebugLog.log("process: skipped no editor state")
+                        return@launch
+                    }
 
                 // Check if there are multi-line selections active
                 if (hasMultiLineSelection()) {
+                    AutocompleteDebugLog.log("process: skipped multiline selection file=${editorState.filePath}")
                     return@launch
                 }
 
                 // Check if current file should be excluded from autocomplete
                 if (shouldExcludeFromAutocomplete(editorState.filePath)) {
+                    AutocompleteDebugLog.log("process: skipped excluded file=${editorState.filePath}")
                     return@launch
                 }
 
                 // Check if user is in template or refactoring UI
                 if (isInTemplateUI()) {
+                    AutocompleteDebugLog.log("process: skipped template UI file=${editorState.filePath}")
                     return@launch
                 }
 
                 FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.let {
 //                        if (!it.isInLocalFileSystem) return@launch
-                } ?: return@launch
+                } ?: run {
+                    AutocompleteDebugLog.log("process: skipped no selected file file=${editorState.filePath}")
+                    return@launch
+                }
 
                 val requestEntry =
                     AutocompleteRequestEntry(
                         editorState = editorState,
                     )
 
+                AutocompleteDebugLog.log(
+                    "process: request queued file=${editorState.filePath} cursor=${editorState.cursorOffset} " +
+                        "chars=${editorState.documentText.length}",
+                )
                 val deferred = CompletableDeferred<Pair<AutocompleteRequestEntry, NextEditAutocompleteResponse?>>()
                 fetchAutocompleteRequest(requestEntry, deferred)
             }
@@ -1922,15 +1942,27 @@ class RecentEditsTracker(
     private fun fetchAutocompleteRequest(
         requestEntry: AutocompleteRequestEntry,
         deferred: CompletableDeferred<Pair<AutocompleteRequestEntry, NextEditAutocompleteResponse?>>,
-    ) = ioScope.launch {
+    ): Job {
+        latestFetchRequestTime.set(requestEntry.requestTime)
+        val job =
+            ioScope.launch {
         try {
             mutex.withLock {
+                if (requestEntry.requestTime < latestFetchRequestTime.get()) {
+                    AutocompleteDebugLog.log("fetch-worker: skipped obsolete request before fetch file=${requestEntry.editorState.filePath}")
+                    deferred.cancel()
+                    return@launch
+                }
+
                 // Cancel all previous requests
                 fetchJobs.values.forEach { it.cancel() }
                 fetchJobs.clear()
+                activeFetchJobs.values.forEach { it.cancel() }
+                activeFetchJobs.clear()
 
                 // Add the new request
                 fetchJobs[requestEntry.requestTime] = deferred
+                activeFetchJobs[requestEntry.requestTime] = coroutineContext.job
             }
 //            println("Sending request: ${requestEntry.id} at time ${requestEntry.requestTime}")
             val response =
@@ -1939,18 +1971,38 @@ class RecentEditsTracker(
                     fileContents = requestEntry.editorState.documentText,
                     caretPosition = requestEntry.editorState.cursorOffset,
                 )?.apply { adjustIndices(requestEntry.editorState.documentText) }
+            AutocompleteDebugLog.log(
+                "fetch-worker: response file=${requestEntry.editorState.filePath} " +
+                    "result=${response != null} completions=${response?.completions?.size ?: 0}",
+            )
             // println("Received response: ${response?.autocomplete_id} in ${System.currentTimeMillis() - requestEntry.requestTime}")
+            if (!isActive || deferred.isCancelled || requestEntry.requestTime < latestFetchRequestTime.get()) {
+                AutocompleteDebugLog.log(
+                    "fetch-worker: dropped cancelled_or_obsolete response file=${requestEntry.editorState.filePath} " +
+                        "request_time=${requestEntry.requestTime} latest=${latestFetchRequestTime.get()}",
+                )
+                return@launch
+            }
             deferred.complete(requestEntry to response)
             completionChannel.send(requestEntry to response)
+        } catch (e: CancellationException) {
+            AutocompleteDebugLog.log("fetch-worker: cancelled file=${requestEntry.editorState.filePath}")
+            deferred.cancel(e)
         } catch (e: Exception) {
             // println("Error fetching autocomplete: ${e.message}")
-            deferred.complete(requestEntry to null)
-            completionChannel.send(requestEntry to null)
+            AutocompleteDebugLog.log("fetch-worker: exception ${e.javaClass.simpleName}: ${e.message}")
+            if (!deferred.isCancelled) {
+                deferred.complete(requestEntry to null)
+                completionChannel.send(requestEntry to null)
+            }
         } finally {
             mutex.withLock {
                 fetchJobs.remove(requestEntry.requestTime)
+                activeFetchJobs.remove(requestEntry.requestTime)
             }
         }
+    }
+        return job
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -1962,19 +2014,29 @@ class RecentEditsTracker(
                 while (isActive) {
                     try {
                         val (request, response) = completionChannel.receive()
-                        response ?: continue
+                        if (response == null) {
+                            AutocompleteDebugLog.log("consumer: skipped null response file=${request.editorState.filePath}")
+                            continue
+                        }
 //                        println("Fetch jobs size: ${fetchJobs.size}")
 
                         // First check if a change has already been proposed:
-                        if (currentSuggestion != null) continue
+                        if (currentSuggestion != null) {
+                            AutocompleteDebugLog.log("consumer: skipped current suggestion already shown")
+                            continue
+                        }
 
                         // Second check if there are applied changes
                         if (isAppliedCodeBlockActive()) {
+                            AutocompleteDebugLog.log("consumer: skipped applied code block or prompt bar active")
                             continue
                         }
 
                         // Third check if there are multi-line selections active
-                        if (hasMultiLineSelection()) continue
+                        if (hasMultiLineSelection()) {
+                            AutocompleteDebugLog.log("consumer: skipped multiline selection")
+                            continue
+                        }
 
                         // Then either it's the last request sent or it's an extension of the added code:
                         val isLatestRequest =
@@ -1995,6 +2057,9 @@ class RecentEditsTracker(
                             if (isValidGhostText) {
                                 request.editorState = getCurrentEditorState() ?: continue
                             } else {
+                                AutocompleteDebugLog.log(
+                                    "consumer: skipped stale request request_time=${request.requestTime} file=${request.editorState.filePath}",
+                                )
                                 continue
                             }
                         }
@@ -2010,10 +2075,15 @@ class RecentEditsTracker(
                                 return@invokeLater
                             }
                             response.completions.firstOrNull()?.let { firstResponse ->
+                                AutocompleteDebugLog.log(
+                                    "consumer: showing first completion autocomplete_id=${response.autocomplete_id} " +
+                                        "queued_extra=${response.completions.size - 1}",
+                                )
                                 suggestionQueue.clear()
                                 response.completions.drop(1).forEach { suggestionQueue.add(it) }
                                 showAutocomplete(firstResponse, request.editorState)
                             } ?: run {
+                                AutocompleteDebugLog.log("consumer: response has no completions autocomplete_id=${response.autocomplete_id}")
                                 // No suggestion was generated - track file contents for 1% of cases
                                 val sampleRatio =
                                     FeatureFlagService
@@ -2079,7 +2149,11 @@ class RecentEditsTracker(
         requestState: EditorState? = null,
         isShowingPostJumpSuggestion: Boolean = false,
     ) {
-        val previousState = requestState ?: getCurrentEditorState() ?: return
+        val previousState =
+            requestState ?: getCurrentEditorState() ?: run {
+                AutocompleteDebugLog.log("show: skipped no current editor state autocomplete_id=${response.autocomplete_id}")
+                return
+            }
 
         ApplicationManager.getApplication().invokeLater {
             clearAutocomplete(AutocompleteDisposeReason.CLEARING_PREVIOUS_AUTOCOMPLETE)
@@ -2087,8 +2161,13 @@ class RecentEditsTracker(
             // Validations:
 
             // Check if the editor is focused
-            val currentEditor = getCurrentEditor() ?: return@invokeLater
+            val currentEditor =
+                getCurrentEditor() ?: run {
+                    AutocompleteDebugLog.log("show: skipped no current editor autocomplete_id=${response.autocomplete_id}")
+                    return@invokeLater
+                }
             if (!currentEditor.contentComponent.isFocusOwner) {
+                AutocompleteDebugLog.log("show: skipped editor not focused autocomplete_id=${response.autocomplete_id}")
                 return@invokeLater
             }
 
@@ -2096,6 +2175,10 @@ class RecentEditsTracker(
             if (currentEditor.caretModel.offset != previousState.cursorOffset ||
                 currentEditor.document.text != previousState.documentText
             ) {
+                AutocompleteDebugLog.log(
+                    "show: skipped editor state changed autocomplete_id=${response.autocomplete_id} " +
+                        "caret_now=${currentEditor.caretModel.offset} caret_then=${previousState.cursorOffset}",
+                )
                 return@invokeLater
             }
 
@@ -2109,29 +2192,41 @@ class RecentEditsTracker(
                         docText.subSequence(
                             response.start_index,
                             response.end_index,
-                        )
-                    }
-                } ?: return@invokeLater
+                    )
+                }
+            } ?: run {
+                AutocompleteDebugLog.log("show: skipped invalid range autocomplete_id=${response.autocomplete_id}")
+                return@invokeLater
+            }
             if (oldContent.toString().trim('\n') == response.completion.trim('\n')) {
+                AutocompleteDebugLog.log("show: skipped trivial change autocomplete_id=${response.autocomplete_id}")
                 return@invokeLater
             }
 
             debouncer.cancel()
 
             // Show the suggestion
-            AutocompleteSuggestion
+            val suggestion =
+                AutocompleteSuggestion
                 .fromAutocompleteResponse(
                     response = response,
                     editor = currentEditor,
                     project = project,
-                )?.apply {
+                )
+            if (suggestion == null) {
+                AutocompleteDebugLog.log("show: skipped could not build suggestion autocomplete_id=${response.autocomplete_id}")
+                return@invokeLater
+            }
+
+            suggestion
+                .apply {
                     onDispose = {
                         clearAutocomplete(AutocompleteDisposeReason.AUTOCOMPLETE_DISPOSED)
                     }
                     // Set retrieval counts for metrics tracking
                     numDefinitionsRetrieved = lastNumDefinitionsRetrieved
                     numUsagesRetrieved = lastNumUsagesRetrieved
-                }?.let {
+                }.let {
                     // Handle rejection caching
                     if ((
                             AutocompleteRejectionCache.getInstance(project).checkIfSuggestionShouldBeShown(it) ||
@@ -2146,6 +2241,10 @@ class RecentEditsTracker(
 
                         // This prevents the popup from being killed by out-of-bounds issues.
                         it.show(currentEditor, isShowingPostJumpSuggestion)
+                        AutocompleteDebugLog.log(
+                            "show: displayed type=${it.type} autocomplete_id=${it.autocomplete_id} " +
+                                "start=${it.startOffset} end=${it.endOffset}",
+                        )
 
                         it.shownTime = System.currentTimeMillis()
                         AutocompleteMetricsTracker.getInstance(project).trackSuggestionShown(suggestion = it)
@@ -2174,6 +2273,9 @@ class RecentEditsTracker(
                             println("Error tracking file contents after delay: ${e.message}")
                         }
                     } else {
+                        AutocompleteDebugLog.log(
+                            "show: skipped rejection cache type=${it.type} autocomplete_id=${it.autocomplete_id}",
+                        )
                         it.dispose()
                     }
                 }
@@ -2594,6 +2696,8 @@ class RecentEditsTracker(
             }
         }
         fetchJobs.clear()
+        activeFetchJobs.values.forEach { it.cancel() }
+        activeFetchJobs.clear()
 
         completionChannel.close()
 

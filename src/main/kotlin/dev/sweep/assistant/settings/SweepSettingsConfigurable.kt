@@ -202,7 +202,7 @@ class SweepSettingsConfigurable(
         mlxRow.layout = BoxLayout(mlxRow, BoxLayout.Y_AXIS)
         val mlxRepoRow = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
-            add(JBLabel("MLX Repo:"))
+            add(JBLabel("MLX Repo/Path:"))
             add(javax.swing.Box.createRigidArea(Dimension(8, 0)))
             add(mlxModelRepoField)
         }
@@ -434,6 +434,7 @@ class SweepSettingsConfigurable(
         }
 
         val isNowLocalMode = localModeField.isSelected
+        val isAutocompleteEnabled = enabledField.isSelected
         val isNowManaged = newExternalUrl.isBlank()
         val newPort = portField.intValue()
         val newRepo = modelRepoField.text.trim()
@@ -446,6 +447,11 @@ class SweepSettingsConfigurable(
             when {
                 !isNowLocalMode -> {
                     if (wasLocalMode && wasManaged) manager.stopManagedServer()
+                }
+                !isAutocompleteEnabled -> {
+                    if ((wasLocalMode && wasManaged) || isNowManaged) {
+                        manager.stopManagedServer()
+                    }
                 }
                 isNowManaged -> {
                     val switchedFromExternal = wasLocalMode && !wasManaged

@@ -112,6 +112,8 @@ def create_app(model_repo: str, model_revision: str = "") -> FastAPI:
     # request handler. Dict access is atomic under the GIL and the value only
     # transitions None -> str (never back), so no lock is needed.
     load_error: Dict[str, Optional[str]] = {"msg": None}
+    request_counter = {"latest": 0}
+    request_counter_lock = threading.Lock()
 
     model = get_model(model_repo, model_revision)
 
@@ -129,14 +131,21 @@ def create_app(model_repo: str, model_revision: str = "") -> FastAPI:
         if load_error["msg"]:
             return JSONResponse(
                 status_code=503,
-                content={"status": "error", "error": load_error["msg"]},
+                content={"status": "error", "backend": "mlx", "error": load_error["msg"]},
             )
         if not model.is_ready:
             return JSONResponse(
                 status_code=503,
-                content={"status": "loading", "model_repo": model.model_repo},
+                content={"status": "loading", "backend": "mlx", "model_repo": model.model_repo},
             )
-        return JSONResponse(content={"status": "ok", "model_repo": model.model_repo, "model_revision": model._model_revision or "latest"})
+        return JSONResponse(
+            content={
+                "status": "ok",
+                "backend": "mlx",
+                "model_repo": model.model_repo,
+                "model_revision": model._model_revision or "latest",
+            },
+        )
 
     @app.post("/backend/next_edit_autocomplete")
     async def next_edit_autocomplete(request: Request) -> StreamingResponse:
@@ -178,6 +187,14 @@ def create_app(model_repo: str, model_revision: str = "") -> FastAPI:
             ).encode("utf-8")
             return
 
+        with request_counter_lock:
+            request_counter["latest"] += 1
+            request_id = request_counter["latest"]
+
+        def is_stale_request() -> bool:
+            with request_counter_lock:
+                return request_id != request_counter["latest"]
+
         try:
             file_path = payload.get("file_path", "")
             file_contents = payload.get("file_contents", "")
@@ -202,10 +219,32 @@ def create_app(model_repo: str, model_revision: str = "") -> FastAPI:
             # delay concurrent /health polls (which the plugin uses to decide
             # whether to restart the server).
             t0 = time.monotonic()
+            logger.info(
+                "Generating autocomplete: request_id=%s prompt_chars=%s max_new_tokens=%s file=%s",
+                request_id,
+                len(built.prompt),
+                DEFAULT_MAX_NEW_TOKENS,
+                file_path,
+            )
             completion = await asyncio.to_thread(
-                model.generate_completion, built.prompt, DEFAULT_MAX_NEW_TOKENS
+                model.generate_completion,
+                built.prompt,
+                DEFAULT_MAX_NEW_TOKENS,
+                is_stale_request,
             )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
+            logger.info(
+                "Generated autocomplete: request_id=%s elapsed_ms=%s completion_chars=%s stale=%s file=%s",
+                request_id,
+                elapsed_ms,
+                len(completion),
+                is_stale_request(),
+                file_path,
+            )
+
+            if is_stale_request():
+                yield (json.dumps(_empty_response(elapsed_ms)) + "\n").encode("utf-8")
+                return
 
             # Model output continues from the prefill. The new code block is prefill + output.
             new_block = built.prefill + completion

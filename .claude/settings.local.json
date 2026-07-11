@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/palmerodev/.claude/skills/thermo-nuclear-review/**)",
+      "Read(//Users/palmerodev/.claude/plugins/**)",
+      "Bash(./gradlew --no-daemon compileKotlin -q)",
+      "Bash(./gradlew --no-daemon compileKotlin)",
+      "Bash(./gradlew --no-daemon compileKotlin --rerun-tasks)",
+      "Bash(./gradlew compileKotlin --console=plain)",
+      "Bash(./gradlew :compileKotlin --console=plain)",
+      "Bash(./gradlew :test --tests \"dev.sweep.assistant.api.external.ExternalAgentProtocolTest\" --console=plain)",
+      "Bash(./gradlew :compileKotlin :compileTestKotlin --console=plain)",
+      "Bash(./gradlew compileKotlin)"
+    ]
+  }
+}

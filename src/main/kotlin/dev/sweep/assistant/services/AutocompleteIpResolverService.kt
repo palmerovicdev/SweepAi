@@ -49,6 +49,7 @@ class AutocompleteIpResolverService(
         private const val RESOLUTION_INTERVAL_MS = 15_000L
         private const val HEALTH_CHECK_INTERVAL_MS = 25_000L // Just under 30 seconds
         private const val READ_TIMEOUT_MS = 10_000L
+        private const val LOCAL_READ_TIMEOUT_MS = 10_000L
         private const val USER_ACTIVITY_TIMEOUT_MS = 15 * 60 * 1000L // 15 minutes
     }
 
@@ -89,7 +90,10 @@ class AutocompleteIpResolverService(
     @RequiresBackgroundThread
     suspend fun fetchNextEditAutocomplete(request: NextEditAutocompleteRequest): NextEditAutocompleteResponse? =
         try {
-            if (SweepConfig.getInstance(project).isAutocompleteLocalMode()) {
+            val isLocalMode = SweepConfig.getInstance(project).isAutocompleteLocalMode()
+            val requestStartTime = System.currentTimeMillis()
+            if (isLocalMode) {
+                AutocompleteDebugLog.log("fetch: ensuring local server is running")
                 LocalAutocompleteServerManager.getInstance().ensureServerRunning()
             }
 
@@ -125,11 +129,18 @@ class AutocompleteIpResolverService(
                     "Bearer ${SweepSettings.getInstance().githubToken}"
                 }
 
+            val baseUrl = getBaseUrl()
+            val timeoutMs = if (isLocalMode) LOCAL_READ_TIMEOUT_MS else READ_TIMEOUT_MS
+            AutocompleteDebugLog.log(
+                "fetch: POST $baseUrl/backend/next_edit_autocomplete " +
+                    "local=$isLocalMode timeout_ms=$timeoutMs file=${request.file_path} cursor=${request.cursor_position}",
+            )
+
             val httpRequestBuilder =
                 HttpRequest
                     .newBuilder()
-                    .uri(URI.create("${getBaseUrl()}/backend/next_edit_autocomplete"))
-                    .timeout(Duration.ofMillis(READ_TIMEOUT_MS))
+                    .uri(URI.create("$baseUrl/backend/next_edit_autocomplete"))
+                    .timeout(Duration.ofMillis(timeoutMs))
                     .header("Content-Type", "application/json")
                     .header("Authorization", authorization)
                     .header("X-Plugin-Version", getCurrentSweepPluginVersion() ?: "unknown")
@@ -143,43 +154,59 @@ class AutocompleteIpResolverService(
 
             val httpRequest = httpRequestBuilder.POST(HttpRequest.BodyPublishers.ofByteArray(finalData)).build()
 
-            val response =
-                httpClient
-                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofInputStream())
-                    .await()
-                    .raiseForStatus()
-
             var result: NextEditAutocompleteResponse? = null
-            val isLocalMode = SweepConfig.getInstance(project).isAutocompleteLocalMode()
 
             if (isLocalMode) {
-                // For local mode, read line-by-line to handle server crashes mid-stream gracefully
                 try {
-                    response.body().bufferedReader().use { reader ->
-                        var line: String?
-                        while (reader.readLine().also { line = it } != null) {
-                            val l = line ?: continue
-                            if (l.isBlank()) continue
-                            try {
-                                val jsonElement = defaultJson.parseToJsonElement(l)
+                    result =
+                        withTimeout(LOCAL_READ_TIMEOUT_MS) {
+                            val response =
+                                httpClient
+                                    .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
+                                    .await()
+                                    .raiseForStatus()
+
+                            var localResult: NextEditAutocompleteResponse? = null
+                            response.body().lineSequence().forEach { l ->
+                                if (l.isBlank()) return@forEach
+                                val jsonElement =
+                                    try {
+                                        defaultJson.parseToJsonElement(l)
+                                    } catch (e: Exception) {
+                                        logger.warn("Error parsing local server response: ${e.message}")
+                                        AutocompleteDebugLog.log("fetch: parse error from local response: ${e.message}; line=${l.take(500)}")
+                                        return@forEach
+                                    }
+
                                 if (jsonElement is JsonObject && jsonElement.containsKey("status")) {
                                     val status = jsonElement["status"]?.jsonPrimitive?.contentOrNull
                                     if (status == "error") {
                                         val errorMsg = jsonElement["error"]?.jsonPrimitive?.contentOrNull ?: "Unknown error"
                                         logger.warn("Local autocomplete server error: $errorMsg")
-                                        continue
+                                        AutocompleteDebugLog.log("fetch: local server error: $errorMsg")
+                                        throw LocalAutocompleteServerException(errorMsg)
                                     }
                                 }
-                                result = defaultJson.decodeFromString(NextEditAutocompleteResponse.serializer(), l)
-                            } catch (e: Exception) {
-                                logger.warn("Error parsing local server response: ${e.message}")
+
+                                try {
+                                    val decoded = defaultJson.decodeFromString(NextEditAutocompleteResponse.serializer(), l)
+                                    localResult = decoded
+                                    AutocompleteDebugLog.log(
+                                        "fetch: decoded local response autocomplete_id=${decoded.autocomplete_id} " +
+                                            "completions=${decoded.completions.size}",
+                                    )
+                                } catch (e: Exception) {
+                                    logger.warn("Error parsing local server response: ${e.message}")
+                                    AutocompleteDebugLog.log("fetch: parse error from local response: ${e.message}; line=${l.take(500)}")
+                                }
                             }
+                            localResult
                         }
-                    }
-                } catch (e: java.io.IOException) {
-                    // Server closed the stream (crash, broken pipe, etc.)
-                    // Process whatever we got before the closure
-                    logger.info("Local server stream closed: ${e.message}")
+                } catch (e: TimeoutCancellationException) {
+                    AutocompleteDebugLog.log(
+                        "fetch: local timeout after ${LOCAL_READ_TIMEOUT_MS}ms " +
+                            "elapsed_ms=${System.currentTimeMillis() - requestStartTime}",
+                    )
                 }
 
                 if (result != null) {
@@ -188,19 +215,34 @@ class AutocompleteIpResolverService(
                     LocalAutocompleteServerManager.getInstance().reportFailure()
                 }
             } else {
+                val response =
+                    httpClient
+                        .sendAsync(httpRequest, HttpResponse.BodyHandlers.ofInputStream())
+                        .await()
+                        .raiseForStatus()
+
                 response.streamJson<NextEditAutocompleteResponse>().collect {
                     result = it
                 }
             }
 
+            AutocompleteDebugLog.log(
+                "fetch: completed elapsed_ms=${System.currentTimeMillis() - requestStartTime} " +
+                    "result=${result != null} completions=${result?.completions?.size ?: 0}",
+            )
             result
         } catch (e: Exception) {
             logger.warn("Error fetching next edit autocomplete: ${e.message}")
+            AutocompleteDebugLog.log("fetch: exception ${e.javaClass.simpleName}: ${e.message}")
             if (SweepConfig.getInstance(project).isAutocompleteLocalMode()) {
                 LocalAutocompleteServerManager.getInstance().reportFailure()
             }
             throw e
         }
+
+    private class LocalAutocompleteServerException(
+        message: String,
+    ) : RuntimeException(message)
 
     init {
         startPeriodicResolution()

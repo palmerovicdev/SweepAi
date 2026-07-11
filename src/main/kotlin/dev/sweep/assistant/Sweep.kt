@@ -54,6 +54,7 @@ class Sweep :
         // has an early return when hasBeenSet is false, so sessions wouldn't be
         // disposed otherwise. Without this, opening conversations from history
         // after re-logging in would fail (try to switch to non-existent tabs).
+        // We are
         SweepSessionManager.getInstance(project).clearAllSessions()
         TabManager.getInstance(project).clearAllTabState()
 
@@ -445,7 +446,7 @@ class Sweep :
         ApplicationManager.getApplication().invokeLater {
             try {
                 val toolWindowEx = toolWindow as? ToolWindowEx ?: return@invokeLater
-                val decorator = toolWindowEx.decorator ?: return@invokeLater
+                val decorator = toolWindowEx.decorator
 
                 // Find the first JPanel child of the decorator (the header panel)
                 for (child in decorator.components) {

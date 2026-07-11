@@ -10,7 +10,11 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
 import dev.sweep.assistant.agent.tools.TerminalApiWrapper
 import dev.sweep.assistant.settings.SweepSettings
+import dev.sweep.assistant.utils.defaultJson
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.plugins.terminal.TerminalToolWindowFactory
 import org.jetbrains.plugins.terminal.TerminalToolWindowManager
 import java.io.File
@@ -101,9 +105,18 @@ class LocalAutocompleteServerManager : Disposable {
     }
 
     fun isServerHealthy(): Boolean =
-        isUrlHealthy(getServerUrl())
+        isUrlHealthy(
+            getServerUrl(),
+            expectedBackend = if (isManagedMode()) currentBackend() else null,
+        )
 
     fun isUrlHealthy(url: String): Boolean =
+        isUrlHealthy(url, expectedBackend = null)
+
+    private fun isUrlHealthy(
+        url: String,
+        expectedBackend: String?,
+    ): Boolean =
         try {
             val base = url.trimEnd('/')
             val request =
@@ -113,11 +126,44 @@ class LocalAutocompleteServerManager : Disposable {
                     .timeout(Duration.ofMillis(HEALTH_CHECK_TIMEOUT_MS))
                     .GET()
                     .build()
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.discarding())
-            response.statusCode() in 200..299
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            response.statusCode() in 200..299 && isExpectedBackend(response.body(), expectedBackend)
         } catch (e: Exception) {
             false
         }
+
+    private fun isExpectedBackend(
+        healthBody: String,
+        expectedBackend: String?,
+    ): Boolean {
+        if (expectedBackend == null) return true
+
+        val health =
+            try {
+                defaultJson.parseToJsonElement(healthBody) as? JsonObject
+            } catch (_: Exception) {
+                null
+            } ?: return expectedBackend != "mlx"
+
+        val reportedBackend = health["backend"]?.jsonPrimitive?.contentOrNull
+        if (reportedBackend != null) {
+            return reportedBackend == expectedBackend
+        }
+
+        val reportedModelRepo = health["model_repo"]?.jsonPrimitive?.contentOrNull?.trim()
+        val mlxModelRepo =
+            try {
+                SweepSettings.getInstance().autocompleteMlxModelRepo.trim()
+            } catch (_: Exception) {
+                ""
+            }
+
+        if (expectedBackend == "mlx") {
+            return reportedModelRepo != null && reportedModelRepo == mlxModelRepo
+        }
+
+        return reportedModelRepo == null || reportedModelRepo != mlxModelRepo
+    }
 
     @Synchronized
     private fun startServer(onStatus: ((String) -> Unit)? = null) {
@@ -230,26 +276,11 @@ class LocalAutocompleteServerManager : Disposable {
             // Fall back to package defaults
         }
 
-        // Redirect stdout to /dev/null — the server communicates via HTTP, not stdout.
-        // llama_cpp calls print() during generation which causes BrokenPipeError if stdout is a pipe.
-        pb.redirectOutput(ProcessBuilder.Redirect.to(File(if (isWindows) "NUL" else "/dev/null")))
+        redirectServerLogs(pb)
 
         try {
             serverProcess = pb.start()
             logger.info("Started local autocomplete server with: ${command.joinToString(" ")}")
-
-            // Consume stderr in background for logging
-            ApplicationManager.getApplication().executeOnPooledThread {
-                try {
-                    serverProcess?.errorStream?.bufferedReader()?.useLines { lines ->
-                        lines.forEach { line ->
-                            logger.info("Local autocomplete server: $line")
-                        }
-                    }
-                } catch (_: Exception) {
-                    // Process may have been closed
-                }
-            }
 
             // Poll for health check up to 30 seconds
             onStatus?.invoke("Waiting for server to become healthy...")
@@ -293,6 +324,23 @@ class LocalAutocompleteServerManager : Disposable {
                 "Failed to start local autocomplete server: ${e.message}",
                 NotificationType.ERROR,
             )
+        }
+    }
+
+    private fun redirectServerLogs(pb: ProcessBuilder) {
+        // Both llama.cpp and uvicorn write diagnostic output while serving requests.
+        // Redirecting both streams to a file avoids BrokenPipeError if native code
+        // prints after the Java pipe has been closed.
+        try {
+            val logDir = File(System.getProperty("user.home"), ".sweep")
+            logDir.mkdirs()
+            val logFile = File(logDir, "local-autocomplete-server.log")
+            pb.redirectErrorStream(true)
+            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
+        } catch (_: Exception) {
+            val sink = File(if (isWindows) "NUL" else "/dev/null")
+            pb.redirectError(ProcessBuilder.Redirect.to(sink))
+            pb.redirectOutput(ProcessBuilder.Redirect.to(sink))
         }
     }
 
